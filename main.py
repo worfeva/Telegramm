@@ -280,14 +280,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     elif data.startswith("confirm_"):
         consultant = context.user_data.get("consultant")
+        
+        keyboard = [
+            [InlineKeyboardButton(f"Связаться с доктором {consultant['name']}",url=f"https://t.me/{consultant['username'].lstrip('@')}")]
+        ]
+        
         await context.bot.send_message(
             chat_id=user.id,
             text=THANK_YOU_TEXT
+        reply_markup=InlineKeyboardMarkup(keyboard)
         )
-        await context.bot.send_message(
-            chat_id=user.id,
-            text=f"🔗 Связаться с доктором: {consultant['username']}"
-            )
         
     elif data == "cancel":
         await context.bot.send_message(chat_id=user.id,text="Действие отменено."
