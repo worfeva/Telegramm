@@ -3,7 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 
 ADMIN_CHAT_ID = 5115887933
-BOT_TOKEN = os.environ["BOT_TOKEN"]
+BOT_TOKEN = "7986033726:AAHyB1I77N68Z53-YOj1B5uhJLXEuB7XdEU"
 consultation_chats = {}
 
 CONSULTANTS = {
