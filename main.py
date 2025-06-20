@@ -288,9 +288,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(
             chat_id=user.id,
             text=THANK_YOU_TEXT,
-        reply_markup=InlineKeyboardMarkup(keyboard)
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
-        
+
+        consultant_chat_id = consultant["id"]
+        user_mention = f"<a href='tg://user?id={user.id}'>{user.first_name}</a>"
+        notification_text = (
+        f"📢 Пользователь {user_mention} подтвердил запросил консультацию.\n"    
+        )
+        await context.bot.send_message(
+            chat_id=consultant_chat_id,
+            text=notification_text,
+            parse_mode="HTML"
+    )
     elif data == "cancel":
         await context.bot.send_message(chat_id=user.id,text="Действие отменено."
             )
