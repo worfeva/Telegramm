@@ -188,7 +188,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     keywords_con = ["связаться", "доктором", "консультация"]
-    if any(keyword in text for keyword in keywords_ty):
+    if any(keyword in text for keyword in keywords_con):
         keyboard = [
             [InlineKeyboardButton("Юз Андрей Анатольевич", callback_data="consult_andrey")],
             [InlineKeyboardButton("Казанов Валентин Александрович",  callback_data="consult_andrey")],
