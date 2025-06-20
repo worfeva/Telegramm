@@ -228,7 +228,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "с 2021 по настояще время - работа по специальности в городе Владимир\n"
             "Автор ряда научных публикаций, в том числе опубликованных в междунарожных ВАК-рецензируемых журналах. Участник и докладчик на научно-практических конференциях. Соавтор методики ЛФК при ревматоидном артрите.\n", 
             parse_mode="html")
-        
+        return
     await update.message.reply_text(
     "🧐 К сожалению, я пока что не обучен такой команде. Попробуйте снова"
     )
@@ -242,7 +242,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "consult_andrey" or data == "consult_valentin":
         consultant = CONSULTANTS["andrey"] if data == "consult_andrey" else CONSULTANTS["valentin"]
         context.user_data["consultant"] = consultant 
-
+        
+        keyboard = [
+            [InlineKeyboardButton("Подвердить", callback_data="start_payment")],
+            [InlineKeyboardButton("Отмена", callback_data="cancel")]
+        ]
         await context.bot.send_message(
             chat_id=user.id,
             text=f"Вы запросили консультацию с {consultant['name']}.\n\n{CONSULTANT_WARNING}"
