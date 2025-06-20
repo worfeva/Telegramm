@@ -287,7 +287,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await context.bot.send_message(
             chat_id=user.id,
-            text=THANK_YOU_TEXT
+            text=THANK_YOU_TEXT,
         reply_markup=InlineKeyboardMarkup(keyboard)
         )
         
