@@ -237,7 +237,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user = query.from_user
-
+    data = query.data
+    
     if data == "consult_andrey" or data == "consult_valentin":
         consultant = CONSULTANTS["andrey"] if data == "consult_andrey" else CONSULTANTS["valentin"]
         context.user_data["consultant"] = consultant 
@@ -246,8 +247,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=user.id,
             text=f"Вы запросили консультацию с {consultant['name']}.\n\n{CONSULTANT_WARNING}"
         )
-    
-    if query.data == "start_payment":
+        
+    elif query.data == "start_payment":
         keyboard = [
             [InlineKeyboardButton("🇷🇺 Я из России", callback_data="russia")],
             [InlineKeyboardButton("🇪🇺 Я из ЕС", callback_data="eu")]
@@ -257,11 +258,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text="🌍 Укажите регион проживания:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
-
+        
     elif query.data in ["russia", "eu"]:
         region = query.data
         payment_link = payment_links.get(region)
-
         keyboard = [
             [InlineKeyboardButton("💳 Оплатить консультацию", url=payment_link)],
             [InlineKeyboardButton("✅ Я оплатил", callback_data=f"confirm_{region}")]
@@ -283,19 +283,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=user.id,
             text=f"🔗 Связаться с доктором: {consultant['username']}"
             )
-
+        
     elif data == "cancel":
         await context.bot.send_message(
             chat_id=user.id,
             text="Действие отменено."
             )
-    
-    def main():
-        app = ApplicationBuilder().token(BOT_TOKEN).build()
-        app.add_handler(CommandHandler("start", handle_message))
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-        app.add_handler(CallbackQueryHandler(button_handler))
-        app.run_polling()
+        
+def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", handle_message))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.run_polling()
 
-        if __name__ == "__main__": 
+if __name__ == "__main__": 
             main()
