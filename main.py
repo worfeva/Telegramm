@@ -249,7 +249,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         await context.bot.send_message(
             chat_id=user.id,
-            text=f"Вы запросили консультацию с {consultant['name']}.\n\n{CONSULTANT_WARNING}"
+            text=f"Вы запросили консультацию с {consultant['name']}.\n\n{CONSULTANT_WARNING}",
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
         
     elif query.data == "start_payment":
@@ -272,12 +273,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
 
         await context.bot.send_message(
-            chat_id=query.from_user.id,
+            chat_id=user.id,
             text="📌 Для продолжения, пожалуйста, оплатите консультацию по ссылке ниже.\n"
                  "Подтвердите оплату, нажав «✅ Я оплатил».",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
-    elif data == "confirm_payment":
+    elif data.startswith("confirm_"):
         consultant = context.user_data.get("consultant")
         await context.bot.send_message(
             chat_id=user.id,
@@ -289,9 +290,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         
     elif data == "cancel":
-        await context.bot.send_message(
-            chat_id=user.id,
-            text="Действие отменено."
+        await context.bot.send_message(chat_id=user.id,text="Действие отменено."
             )
         
 def main():
