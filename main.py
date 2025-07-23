@@ -1,5 +1,6 @@
 import os
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import asyncio
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 
 ADMIN_CHAT_ID = 5115887933
@@ -26,8 +27,21 @@ CONSULTANT_WARNING = (
 THANK_YOU_TEXT = (
     "🎉 Спасибо за оплату!\n\n"
     "Теперь Вы можете связаться с доктором по ссылке ниже. Пожалуйста, в первом сообщении подробно изложите Ваш анамнез, сопутствующие заболевания и принимаемые медикаменты (дозировки в милиграммах). Консультант ответит Вам в ближайшее время."
-    
 )
+
+async def clear_webhook():
+    bot = Bot(BOT_TOKEN)
+    await bot.delete_webhook(drop_pending_updates=True)
+
+async def main():
+    await clear_webhook()
+
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", handle_message))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    await app.run_polling()
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip().lower()
     if not update.message or not update.message.text:
