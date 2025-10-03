@@ -1,8 +1,37 @@
 import os
 import asyncio
+import json
+import sqlite3
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
-
+import re
+from collections import Counter
+stats_file = "stats.json"
+# подключение к базе данных
+conn = sqlite3.connect("bot_logs.db", check_same_thread=False)
+cursor = conn.cursor()
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message TEXT,
+    date TEXT
+)
+""")
+conn.commit()
+STOP_WORDS = {"и", "в", "на", "с", "по", "за", "к", "для", "это", "не", "а", "о", "у"}
+# функция для записи сообщений в базу данных
+def log_message(message):
+    cursor.execute("INSERT INTO logs (message, date) VALUES (?, ?)", 
+                   (message, datetime.now().isoformat()))
+    conn.commit()
+# Загрузка статистики из файла
+try:
+    with open(stats_file, "r", encoding="utf-8") as f:
+        word_counter = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    word_counter = {}
+    
 ADMIN_CHAT_ID = 5115887933
 BOT_TOKEN = "7986033726:AAHyB1I77N68Z53-YOj1B5uhJLXEuB7XdEU"
 consultation_chats = {}
@@ -12,14 +41,16 @@ CONSULTANTS = {
     "valentin": {"id": 1061541258, "name": "Казанов Валентин Александрович", "username": "@kazanovval"}
 }
 
-don_russia = "https://yoomoney.ru/quickpay/shop-widget?writer=seller&targets=Поддержка+проекта&button-text=14&payment-type-choice=on&quickpay=shop&account=4100119195367811"
+don_russia = "https://yoomoney.ru/to/4100119195367811"
 don_eu = "https://paypal.me/YAndrej"
 
 payment_links = {
-    "russia": "https://yoomoney.ru/quickpay/shop-widget?writer=seller&targets=Первичная+консультация&default-sum=2500&button-text=11&payment-type-choice=on&quickpay=shop&account=4100119195367811",
-    "eu": "https://paypal.me/YAndrej"
+    "yoomoney": "https://yoomoney.ru/to/4100119195367811",
+    "paypal": "https://paypal.me/YAndrej",
+    "sberbank": "https://www.sberbank.com/sms/pbpn?requisiteNumber=79175279883"
 }
 CONSULTANT_WARNING = (
+    "Стоимость первичной консультации составляет 2500 рублей. Повторной - 1000 рублей \n\n" 
     "❗️Мы строго соблюдаем врачебную тайну. Намеренное разглашение персональных данных третьим лицам исключено. Тем не менее, в целях Вашей информационной безопасности просьба удалять все личные данные с присылаемых в процессе консультации материалов❗️\n\n"
 "❗️Консультации не являются медицинской услугой и не заменяют очный приём❗️\n\n"
     "Создавая консультативный чат Вы подтверждаете, что ознакомлены с условиями обработки персональных данных и оплаты консультации."
@@ -43,9 +74,19 @@ async def main():
     await app.run_polling()
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global word_counter
+    if not update.message or not update.message.text:
+        return
+    user = update.effective_user.username or str(update.effective_user.id)
     text = update.message.text.strip().lower()
     if not update.message or not update.message.text:
         return
+    log_message(text)
+    word_counter[text] = word_counter.get(text, 0) + 1
+
+    # Сохранение статистики в файл
+    with open(stats_file, "w", encoding="utf-8") as f:
+        json.dump(word_counter, f, ensure_ascii=False, indent=2)
     
     keywords_rf = ["Повышен","ревматоидный","фактор","РФ","положительный"] 
     if any(keyword.lower() in text for keyword in keywords_rf):
@@ -246,19 +287,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
     "🧐 К сожалению, я пока что не обучен такой команде. Попробуйте снова"
     )
-# === Обработчик кнопок ===
+
+# оплаты консультации
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user = query.from_user
     data = query.data
-    
-    if data == "consult_andrey" or data == "consult_valentin":
+
+    if data in ["consult_andrey", "consult_valentin"]:
         consultant = CONSULTANTS["andrey"] if data == "consult_andrey" else CONSULTANTS["valentin"]
         context.user_data["consultant"] = consultant 
-        
+
         keyboard = [
-            [InlineKeyboardButton("Подвердить", callback_data="start_payment")],
+            [InlineKeyboardButton("Подтвердить", callback_data="start_payment")],
             [InlineKeyboardButton("Отмена", callback_data="cancel")]
         ]
         await context.bot.send_message(
@@ -266,39 +308,55 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=f"Вы запросили консультацию с {consultant['name']}.\n\n{CONSULTANT_WARNING}",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
-        
-    elif query.data == "start_payment":
+
+    elif data == "start_payment":
         keyboard = [
-            [InlineKeyboardButton("🇷🇺 Я из России", callback_data="russia")],
-            [InlineKeyboardButton("🇪🇺 Я из ЕС", callback_data="eu")]
+            [InlineKeyboardButton("💳 ЮMoney / Российские платёжные системы", callback_data="yoomoney")],
+            [InlineKeyboardButton("💳 PayPal / ЕС", callback_data="paypal")],
+            [InlineKeyboardButton("💳 Прямой перевод через Сбербанк", callback_data="sberbank")]
         ]
         await context.bot.send_message(
             chat_id=user.id,
-            text="🌍 Укажите регион проживания:",
+            text="🌍 Выберите способ оплаты:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
-        
-    elif query.data in ["russia", "eu"]:
-        region = query.data
-        payment_link = payment_links.get(region)
+
+    elif data in ["yoomoney", "paypal", "sberbank"]:
+        payment_link = payment_links.get(data)
         keyboard = [
-            [InlineKeyboardButton("💳 Оплатить консультацию", url=payment_link)],
-            [InlineKeyboardButton("✅ Я оплатил", callback_data=f"confirm_{region}")]
-        ]
+                [InlineKeyboardButton("💳 Оплатить консультацию", url=payment_link)],
+                [InlineKeyboardButton("✅ Я оплатил", callback_data="confirm_sber")],
+                [InlineKeyboardButton("↩️ Назад", callback_data="start_payment")]
+            ]
+
+        method_names = {
+            "sberbank": "Сбербанк",
+            "yoomoney": "ЮMoney / Только для России",
+            "paypal": "PayPal / страны ЕС"
+        }
+        chosen_method = method_names.get(data)
+        text_msg = (
+            f"✅ Вы выбрали оплату через *{chosen_method}*.\n\n"
+            "📌 Для продолжения, пожалуйста, оплатите консультацию, нажав «Оплатить консультацию».\n\n"
+            "Подтвердите оплату, нажав «✅ Я оплатил»."
+        )
 
         await context.bot.send_message(
             chat_id=user.id,
-            text="📌 Для продолжения, пожалуйста, оплатите консультацию по ссылке ниже.\n"
-                 "Подтвердите оплату, нажав «✅ Я оплатил».",
+            text=text_msg,
+            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+
     elif data.startswith("confirm_"):
         consultant = context.user_data.get("consultant")
-        
         keyboard = [
-            [InlineKeyboardButton(f"Связаться с доктором {consultant['name']}",url=f"https://t.me/{consultant['username'].lstrip('@')}")]
+            [InlineKeyboardButton(
+                f"Связаться с доктором {consultant['name']}",
+                url=f"https://t.me/{consultant['username'].lstrip('@')}"
+            )]
         ]
-        
+
         await context.bot.send_message(
             chat_id=user.id,
             text=THANK_YOU_TEXT,
@@ -308,23 +366,44 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         consultant_chat_id = consultant["id"]
         user_mention = f"<a href='tg://user?id={user.id}'>{user.first_name}</a>"
         notification_text = (
-        f"📢 Пользователь {user_mention} подтвердил запросил консультацию.\n"    
+            f"📢 Пользователь {user_mention} запросил консультацию.\n"
         )
         await context.bot.send_message(
             chat_id=consultant_chat_id,
             text=notification_text,
             parse_mode="HTML"
-    )
-    elif data == "cancel":
-        await context.bot.send_message(chat_id=user.id,text="Действие отменено."
-            )
-        
+        )
+    
+# === Обработчик команды /stats ===
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            cursor.execute("SELECT message FROM logs")
+            all_messages = cursor.fetchall()
+            words = []
+            for (msg,) in all_messages:
+                msg_words = re.findall(r'\b\w+\b', msg.lower())
+                msg_words = [w for w in msg_words if w not in STOP_WORDS]
+                words.extend(msg_words)
+
+            counter = Counter(words)
+            filtered_words = {word: count for word, count in counter.items() if count > 5}
+
+            if not filtered_words:
+                stats_text = "📊 Нет слов, которые встречались более 5 раз."
+            else:
+                stats_text = "📊 Слова, встречавшиеся более 5 раз:\n\n"
+                for word, count in filtered_words.items():
+                        stats_text += f"• {word} — {count} раз(а)\n"
+            
+            await update.message.reply_text(stats_text)
+# Главная функция
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", handle_message))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.run_polling()
+    
 
 if __name__ == "__main__": 
             main()
