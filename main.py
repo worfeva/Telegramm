@@ -2,53 +2,27 @@ import os
 import asyncio
 import json
 import sqlite3
+import re
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
-import re
-from collections import Counter
-stats_file = "stats.json"
-# подключение к базе данных
-conn = sqlite3.connect("bot_logs.db", check_same_thread=False)
-cursor = conn.cursor()
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    message TEXT,
-    date TEXT
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 )
-""")
-conn.commit()
-STOP_WORDS = {"и", "в", "на", "с", "по", "за", "к", "для", "это", "не", "а", "о", "у"}
-# функция для записи сообщений в базу данных
-def log_message(message):
-    cursor.execute("INSERT INTO logs (message, date) VALUES (?, ?)", 
-                   (message, datetime.now().isoformat()))
-    conn.commit()
-# Загрузка статистики из файла
-try:
-    with open(stats_file, "r", encoding="utf-8") as f:
-        word_counter = json.load(f)
-except (FileNotFoundError, json.JSONDecodeError):
-    word_counter = {}
-    
+from collections import Counter
 ADMIN_CHAT_ID = 5115887933
 BOT_TOKEN = "7986033726:AAHyB1I77N68Z53-YOj1B5uhJLXEuB7XdEU"
-consultation_chats = {}
 
 CONSULTANTS = {
     "andrey": {"id": 5115887933, "name": "Юз Андрей Анатольевич", "username": "@worfeva"},
     "valentin": {"id": 1061541258, "name": "Казанов Валентин Александрович", "username": "@kazanovval"}
 }
 
-don_russia = "https://yoomoney.ru/to/4100119195367811"
-don_eu = "https://paypal.me/YAndrej"
-
 payment_links = {
     "yoomoney": "https://yoomoney.ru/to/4100119195367811",
     "paypal": "https://paypal.me/YAndrej",
     "sberbank": "https://www.sberbank.com/sms/pbpn?requisiteNumber=79175279883"
 }
+
 CONSULTANT_WARNING = (
     "Стоимость первичной консультации составляет 2500 рублей. Повторной - 1000 рублей \n\n" 
     "❗️Мы строго соблюдаем врачебную тайну. Намеренное разглашение персональных данных третьим лицам исключено. Тем не менее, в целях Вашей информационной безопасности просьба удалять все личные данные с присылаемых в процессе консультации материалов❗️\n\n"
@@ -59,35 +33,76 @@ THANK_YOU_TEXT = (
     "🎉 Спасибо за оплату!\n\n"
     "Теперь Вы можете связаться с доктором по ссылке ниже. Пожалуйста, в первом сообщении подробно изложите Ваш анамнез, сопутствующие заболевания и принимаемые медикаменты (дозировки в милиграммах). Консультант ответит Вам в ближайшее время."
 )
+STOP_WORDS = {"и", "в", "на", "с", "по", "за", "к", "для", "это", "не", "а", "о", "у"}
+stats_file = "stats.json"
+consultation_chats = {}
+# === Сбор статистики ===    
+try:
+    with open(stats_file, "r", encoding="utf-8") as f:
+        word_counter = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    word_counter = {}
+conn = sqlite3.connect("bot_logs.db", check_same_thread=False)
+cursor = conn.cursor()
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message TEXT,
+    date TEXT
+)
+""")
+conn.commit()
+async def log_message(message):
+    async def log_message(update: Update):
+        if not update.message or not update.message.text:
+            return
+        text = update.message.text.strip()
+    cursor.execute("INSERT INTO logs (message, date) VALUES (?, ?)", 
+                    (text, datetime.now().isoformat())
+    )
+    conn.commit()
 
-async def clear_webhook():
-    bot = Bot(BOT_TOKEN)
-    await bot.delete_webhook(drop_pending_updates=True)
+    words = re.findall(r'\b\w+\b', text.lower())
+    for word in words:
+        if word not in STOP_WORDS:
+            word_counter[word] = word_counter.get(word, 0) + 1
+    with open(stats_file, "w", encoding="utf-8") as f:
+        json.dump(word_counter, f, ensure_ascii=False, indent=2)
 
-async def main():
-    await clear_webhook()
+# === Обработчик команд ==
+    # === /stats ===
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            cursor.execute("SELECT message FROM logs")
+            all_messages = cursor.fetchall()
+            words = []
+            for (msg,) in all_messages:
+                msg_words = re.findall(r'\b\w+\b', msg.lower())
+                msg_words = [w for w in msg_words if w not in STOP_WORDS]
+                words.extend(msg_words)
 
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", handle_message))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+            counter = Counter(words)
+            filtered_words = {word: count for word, count in counter.items() if count > 5}
 
-    await app.run_polling()
+            if not filtered_words:
+                stats_text = "📊 Нет слов, которые встречались более 5 раз."
+            else:
+                stats_text = "📊 Слова, встречавшиеся более 5 раз:\n\n"
+                for word, count in filtered_words.items():
+                        stats_text += f"• {word} — {count} раз(а)\n"
+
+            await update.message.reply_text(stats_text)
+    
+    # === /start ===
+async def start(update, context):
+    await update.message.reply_text("Чем я могу Вам помочь?")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global word_counter
     if not update.message or not update.message.text:
         return
-    user = update.effective_user.username or str(update.effective_user.id)
     text = update.message.text.strip().lower()
-    if not update.message or not update.message.text:
-        return
-    log_message(text)
-    word_counter[text] = word_counter.get(text, 0) + 1
-
-    # Сохранение статистики в файл
-    with open(stats_file, "w", encoding="utf-8") as f:
-        json.dump(word_counter, f, ensure_ascii=False, indent=2)
-    
+    await log_message(update)
+# === /start ===
     keywords_rf = ["Повышен","ревматоидный","фактор","РФ","положительный"] 
     if any(keyword.lower() in text for keyword in keywords_rf):
         await update.message.reply_text(
@@ -104,7 +119,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📬 Если остались вопросы — «Связаться с доктором», и мы постараемся Вам помочь."
             )
         return
-        
+
     keywords_anf = ["АНФ","повышен","положительный","антинуклеарный","ana"]
     if any(keyword.lower() in text for keyword in keywords_anf):
         await update.message.reply_text( 
@@ -129,7 +144,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📬 Если у Вас остались вопросы, введите «Связаться с доктором», и мы постараемся Вам помочь.\n" 
             )
         return
-    
+
     keywords_mk = ["Повышена","мочевая","кислота","высокая",]
     if any(keyword.lower() in text for keyword in keywords_mk):
         await update.message.reply_text(
@@ -149,7 +164,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📬 Если в Вашем случае повышение мочевой кислоты сопровождается симптомами, введите «Связаться с доктором», и мы постараемся вам помочь.\n" 
     )    
         return
-    
+
     keywords_but = ["сыпь","бабочка","в форме бабочки","на лице","дискоидная волчанка"]
     if any(keyword.lower() in text for keyword in keywords_but):
         await update.message.reply_text(
@@ -165,7 +180,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📬 Если у Вас остались вопросы, введите «Связаться с доктором», и мы постараемся Вам помочь.\n" 
     )    
         return
-    
+
     keywords_vas = ["сыпь на теле","васкулит","кожный","петехии","петехиальная"]
     if any(keyword.lower() in text for keyword in keywords_vas):
         await update.message.reply_text(
@@ -203,7 +218,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📬 Если у Вас остались вопросы, введите «Связаться с доктором», и мы постараемся Вам помочь."
         )
         return
-    
+
     keywords_sj = ["сухость","глаз","рта","шегрен","синдром шегрена"]
     if any(keyword.lower() in text for keyword in keywords_sj):
         await update.message.reply_text(
@@ -226,12 +241,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     "📬 Если у Вас остались вопросы, введите «Связаться с доктором», и мы постараемся Вам помочь."
             )
         return
-            
+
     keywords_ty = ["спасибо", "благодарю", "реквизиты", "поддержать", "пожертвовать", "помочь"]
     if any(keyword in text for keyword in keywords_ty):
         keyboard = [
-            [InlineKeyboardButton("🇷🇺 Поддержать проект (Россия)", url=don_russia)],
-            [InlineKeyboardButton("🇪🇺 Поддержать проект (ЕС)", url=don_eu)],
+        [InlineKeyboardButton("💳 ЮMoney / Российские платёжные системы", callback_data="yoomoney")],
+        [InlineKeyboardButton("💳 PayPal / ЕС", callback_data="paypal")],
         ]
         await update.message.reply_text(
             "Пожалуйста! Рад был помочь! 😊\n\n"
@@ -255,7 +270,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return  
-        
+
     keywords_bio = ["о докторах", "о врачах", "консультанты",]
     if any(keyword in text for keyword in keywords_bio):
         await context.bot.send_photo(
@@ -272,7 +287,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🧾 В лечении используются протоколы Европейского альянса ассоциаций ревматологов (EULAR), а также собственные наработки\n"
             "🔹Действительный член Немецкого общества ревматологов, сертификат по УЗ-диагностике суставов DEGUM, сертификат по неотложной помощи. Автор трёх патентов на изобретения на территории РФ, а также ряда статей в англоязычных PubMed рецензируемых журналах\n",
             parse_mode="html")
-        
+
         await context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo="https://i.postimg.cc/cLt3m2FB/2.jpg",
@@ -373,37 +388,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=notification_text,
             parse_mode="HTML"
         )
-    
-# === Обработчик команды /stats ===
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-            cursor.execute("SELECT message FROM logs")
-            all_messages = cursor.fetchall()
-            words = []
-            for (msg,) in all_messages:
-                msg_words = re.findall(r'\b\w+\b', msg.lower())
-                msg_words = [w for w in msg_words if w not in STOP_WORDS]
-                words.extend(msg_words)
 
-            counter = Counter(words)
-            filtered_words = {word: count for word, count in counter.items() if count > 5}
 
-            if not filtered_words:
-                stats_text = "📊 Нет слов, которые встречались более 5 раз."
-            else:
-                stats_text = "📊 Слова, встречавшиеся более 5 раз:\n\n"
-                for word, count in filtered_words.items():
-                        stats_text += f"• {word} — {count} раз(а)\n"
-            
-            await update.message.reply_text(stats_text)
+# === Webhook ===    
+async def clear_webhook():
+    bot = Bot(BOT_TOKEN)
+    await bot.delete_webhook(drop_pending_updates=True)
+async def main():
+    await clear_webhook()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", handle_message))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    await app.run_polling()
+
 # Главная функция
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", handle_message))
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.run_polling()
-    
 
 if __name__ == "__main__": 
             main()
