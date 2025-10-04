@@ -9,20 +9,20 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 )
 from collections import Counter
+# === Константы ===
 ADMIN_CHAT_ID = 5115887933
 BOT_TOKEN = "7986033726:AAHyB1I77N68Z53-YOj1B5uhJLXEuB7XdEU"
-
+stats_file = "stats.json"
+STOP_WORDS = {"и", "в", "на", "с", "по", "за", "к", "для", "это", "не", "а", "о", "у"}
 CONSULTANTS = {
     "andrey": {"id": 5115887933, "name": "Юз Андрей Анатольевич", "username": "@worfeva"},
     "valentin": {"id": 1061541258, "name": "Казанов Валентин Александрович", "username": "@kazanovval"}
 }
-
 payment_links = {
     "yoomoney": "https://yoomoney.ru/to/4100119195367811",
     "paypal": "https://paypal.me/YAndrej",
     "sberbank": "https://www.sberbank.com/sms/pbpn?requisiteNumber=79175279883"
 }
-
 CONSULTANT_WARNING = (
     "Стоимость первичной консультации составляет 2500 рублей. Повторной - 1000 рублей \n\n" 
     "❗️Мы строго соблюдаем врачебную тайну. Намеренное разглашение персональных данных третьим лицам исключено. Тем не менее, в целях Вашей информационной безопасности просьба удалять все личные данные с присылаемых в процессе консультации материалов❗️\n\n"
@@ -33,9 +33,6 @@ THANK_YOU_TEXT = (
     "🎉 Спасибо за оплату!\n\n"
     "Теперь Вы можете связаться с доктором по ссылке ниже. Пожалуйста, в первом сообщении подробно изложите Ваш анамнез, сопутствующие заболевания и принимаемые медикаменты (дозировки в милиграммах). Консультант ответит Вам в ближайшее время."
 )
-STOP_WORDS = {"и", "в", "на", "с", "по", "за", "к", "для", "это", "не", "а", "о", "у"}
-stats_file = "stats.json"
-consultation_chats = {}
 # === Сбор статистики ===    
 try:
     with open(stats_file, "r", encoding="utf-8") as f:
@@ -52,11 +49,11 @@ CREATE TABLE IF NOT EXISTS logs (
 )
 """)
 conn.commit()
-async def log_message(message):
-    async def log_message(update: Update):
-        if not update.message or not update.message.text:
-            return
-        text = update.message.text.strip()
+async def log_message(update: Update):
+    if not update.message or not update.message.text:
+        return
+    text = update.message.text.strip()
+    
     cursor.execute("INSERT INTO logs (message, date) VALUES (?, ?)", 
                     (text, datetime.now().isoformat())
     )
@@ -67,8 +64,8 @@ async def log_message(message):
         if word not in STOP_WORDS:
             word_counter[word] = word_counter.get(word, 0) + 1
     with open(stats_file, "w", encoding="utf-8") as f:
-        json.dump(word_counter, f, ensure_ascii=False, indent=2)
-
+        json.dump(word_counter, f, ensure_ascii=False, indent=2
+    )
 # === Обработчик команд ==
     # === /stats ===
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -91,18 +88,18 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         stats_text += f"• {word} — {count} раз(а)\n"
 
             await update.message.reply_text(stats_text)
-    
     # === /start ===
 async def start(update, context):
-    await update.message.reply_text("Чем я могу Вам помочь?")
-
+    await update.message.reply_text("Чем я могу Вам помочь?"
+    )
+ # === Вопросы ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global word_counter
     if not update.message or not update.message.text:
         return
     text = update.message.text.strip().lower()
     await log_message(update)
-# === /start ===
+   
     keywords_rf = ["Повышен","ревматоидный","фактор","РФ","положительный"] 
     if any(keyword.lower() in text for keyword in keywords_rf):
         await update.message.reply_text(
@@ -397,7 +394,7 @@ async def clear_webhook():
 async def main():
     await clear_webhook()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", handle_message))
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     await app.run_polling()
 
