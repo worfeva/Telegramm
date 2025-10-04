@@ -6,13 +6,13 @@ import re
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
-)
+    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler)
 from collections import Counter
 # === Константы ===
 ADMIN_CHAT_ID = 5115887933
 BOT_TOKEN = "7986033726:AAHyB1I77N68Z53-YOj1B5uhJLXEuB7XdEU"
 stats_file = "stats.json"
+db_file = "logs.db"
 STOP_WORDS = {"и", "в", "на", "с", "по", "за", "к", "для", "это", "не", "а", "о", "у"}
 CONSULTANTS = {
     "andrey": {"id": 5115887933, "name": "Юз Андрей Анатольевич", "username": "@worfeva"},
@@ -34,12 +34,7 @@ THANK_YOU_TEXT = (
     "Теперь Вы можете связаться с доктором по ссылке ниже. Пожалуйста, в первом сообщении подробно изложите Ваш анамнез, сопутствующие заболевания и принимаемые медикаменты (дозировки в милиграммах). Консультант ответит Вам в ближайшее время."
 )
 # === Сбор статистики ===    
-try:
-    with open(stats_file, "r", encoding="utf-8") as f:
-        word_counter = json.load(f)
-except (FileNotFoundError, json.JSONDecodeError):
-    word_counter = {}
-conn = sqlite3.connect("bot_logs.db", check_same_thread=False)
+conn = sqlite3.connect("db_file", check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS logs (
@@ -48,6 +43,14 @@ CREATE TABLE IF NOT EXISTS logs (
     date TEXT
 )
 """)
+if os.path.exists(stats_file):
+    with open(stats_file, "r", encoding="utf-8") as f:
+        try:
+            word_counter = json.load(f)
+        except json.JSONDecodeError:
+            word_counter = {}
+else:
+    word_counter = {}
 conn.commit()
 async def log_message(update: Update):
     if not update.message or not update.message.text:
@@ -76,10 +79,8 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg_words = re.findall(r'\b\w+\b', msg.lower())
                 msg_words = [w for w in msg_words if w not in STOP_WORDS]
                 words.extend(msg_words)
-
             counter = Counter(words)
             filtered_words = {word: count for word, count in counter.items() if count > 5}
-
             if not filtered_words:
                 stats_text = "📊 Нет слов, которые встречались более 5 раз."
             else:
