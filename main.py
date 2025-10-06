@@ -908,10 +908,15 @@ async def clear_webhook():
     await bot.delete_webhook(drop_pending_updates=True)
     
 async def main():
-    await clear_webhook()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    setup_handlers(app)
-    await app.run_polling(drop_pending_updates=True)
+    setup_handlers(app)  
+    await app.initialize()
+    await app.start_polling(drop_pending_updates=True)
+    print("Bot is running...")
+    await asyncio.Event().wait()  #
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.get_running_loop().create_task(main())
+    except RuntimeError:
+        asyncio.run(main())
