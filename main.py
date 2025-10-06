@@ -895,8 +895,17 @@ async def clear_webhook():
 async def main():
     await clear_webhook()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
+    app.add_handler(edit_review_conv)
+    app.add_handler(conv_handler)
+    app.add_handler(moderation_handler)
+    app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
+    app.add_handler(MessageHandler(filters.Regex("(?i)^отзывы$"), read_reviews))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CallbackQueryHandler(user_read_review, pattern=r"^user_read_\d+$"))
+    app.add_handler(CallbackQueryHandler(user_back, pattern="^user_back$"))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(?!admin_).*"))
     await app.run_polling()
 
 # === Главная функция ===
