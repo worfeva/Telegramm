@@ -9,6 +9,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, ConversationHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler)
 from collections import Counter
+
 # === Константы ===
 
 ADMIN_CHAT_ID = 5115887933
@@ -905,13 +906,12 @@ def setup_handlers(app):
 async def clear_webhook():
     bot = Bot(BOT_TOKEN)
     await bot.delete_webhook(drop_pending_updates=True)
-    print("Webhook cleared.")
     
 async def main():
+    await clear_webhook()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     setup_handlers(app)
     await app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
