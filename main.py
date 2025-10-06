@@ -888,41 +888,30 @@ moderation_handler = MessageHandler(
     filters.Regex(f"^{SECRET_MODERATION_CODE}$"),
     secret_moderation
 )
-# === Webhook ===    
+
+def setup_handlers(app):
+    app.add_handler(edit_review_conv)
+    app.add_handler(conv_handler)
+    app.add_handler(moderation_handler)
+    app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
+    app.add_handler(MessageHandler(filters.Regex("(?i)^отзывы$"), read_reviews))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CallbackQueryHandler(user_read_review, pattern=r"^user_read_\d+$"))
+    app.add_handler(CallbackQueryHandler(user_back, pattern="^user_back$"))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(?!admin_).*"))
+
 async def clear_webhook():
     bot = Bot(BOT_TOKEN)
     await bot.delete_webhook(drop_pending_updates=True)
+    print("Webhook cleared.")
+    
 async def main():
-    await clear_webhook()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(edit_review_conv)
-    app.add_handler(conv_handler)
-    app.add_handler(moderation_handler)
-    app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
-    app.add_handler(MessageHandler(filters.Regex("(?i)^отзывы$"), read_reviews))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stats", stats))
-    app.add_handler(CallbackQueryHandler(user_read_review, pattern=r"^user_read_\d+$"))
-    app.add_handler(CallbackQueryHandler(user_back, pattern="^user_back$"))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(?!admin_).*"))
-    await app.run_polling()
+    setup_handlers(app)
+    await app.run_polling(drop_pending_updates=True)
 
-# === Главная функция ===
-def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(edit_review_conv)
-    app.add_handler(conv_handler)
-    app.add_handler(moderation_handler)
-    app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
-    app.add_handler(MessageHandler(filters.Regex("(?i)^отзывы$"), read_reviews))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stats", stats))
-    app.add_handler(CallbackQueryHandler(user_read_review, pattern=r"^user_read_\d+$"))
-    app.add_handler(CallbackQueryHandler(user_back, pattern="^user_back$"))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(?!admin_).*"))
-    app.run_polling()
-
-if __name__ == "__main__": 
-            main()
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
