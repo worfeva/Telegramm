@@ -902,24 +902,11 @@ def setup_handlers(app):
     app.add_handler(CallbackQueryHandler(button_handler, pattern="^(?!admin_).*"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-@flask_app.route("/", methods=["GET"])
-def home():
-    return "✅ Bot is alive!", 200
-
-@flask_app.route(WEBHOOK_PATH, methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    asyncio.create_task(application.process_update(update))
-    return "ok", 200
-    
-async def main():
-    global bot, application
+if __name__ == "__main__":
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     setup_handlers(application)
-    await application.initialize()
-    bot = application.bot
-    await bot.delete_webhook()
-    await bot.set_webhook(WEBHOOK_URL)
-    print(f"🌐 Webhook установлен: {WEBHOOK_URL}")
-
-asyncio.run(main())
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_url=WEBHOOK_URL
+    )
