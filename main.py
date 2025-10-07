@@ -15,11 +15,13 @@ from flask import Flask, request
 
 ADMIN_CHAT_ID = 5115887933
 BOT_TOKEN = "7986033726:AAHyB1I77N68Z53-YOj1B5uhJLXEuB7XdEU"
+
 WEBHOOK_DOMAIN = "https://metatrexat.up.railway.app"
 WEBHOOK_PATH = f"/{BOT_TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_DOMAIN}{WEBHOOK_PATH}"
 PORT = int(os.getenv("PORT", 8080))
 flask_app = Flask(__name__)
+
 stats_file = "stats.json"
 db_file = "logs.db"
 REVIEWS_DB_FILE = "reviews.db"
@@ -852,7 +854,6 @@ async def secret_moderation(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 # ==== Handlers ===
-flask_app = Flask(__name__)
 conv_handler = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex("(?i)^оставить отзыв$"), start_review)],
     states={
@@ -894,7 +895,6 @@ def setup_handlers(app):
     app.add_handler(conv_handler)
     app.add_handler(moderation_handler)
     app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
-    app.add_handler(MessageHandler(filters.Regex("(?i)^оставить отзыв$"), start_review))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CallbackQueryHandler(user_read_review, pattern=r"^user_read_\d+$"))
@@ -909,7 +909,7 @@ def home():
 @flask_app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), bot)
-    asyncio.run(application.process_update(update))
+    asyncio.create_task(application.process_update(update))
     return "ok", 200
 
 def run_flask():
@@ -923,8 +923,6 @@ async def main():
     await bot.delete_webhook()
     await bot.set_webhook(WEBHOOK_URL)
     print(f"🌐 Webhook установлен: {WEBHOOK_URL}")
-
-    threading.Thread(target=run_flask, daemon=True).start()
 
     while True:
         await asyncio.sleep(60)
