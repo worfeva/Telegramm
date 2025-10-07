@@ -13,6 +13,8 @@ from collections import Counter
 
 ADMIN_CHAT_ID = 5115887933
 BOT_TOKEN = "7986033726:AAHyB1I77N68Z53-YOj1B5uhJLXEuB7XdEU"
+WEBHOOK_URL = "https://metatrexat.up.railway.app" 
+PORT = int(os.environ.get("PORT", 8443))
 stats_file = "stats.json"
 db_file = "logs.db"
 REVIEWS_DB_FILE = "reviews.db"
@@ -907,10 +909,18 @@ def setup_handlers(app):
     app.add_handler(CallbackQueryHandler(button_handler, pattern="^(?!admin_).*"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-def main():
+async def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     setup_handlers(app)
-    app.run_polling()
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    await app.start_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_url_path="/"
+    )
+    await app.bot.set_webhook(WEBHOOK_URL)
+    await app.idle()
 
-if __name__ == "__main__": 
-            main()
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
