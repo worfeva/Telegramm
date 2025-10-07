@@ -1,40 +1,33 @@
 import os
-import asyncio
 import json
 import shutil
 import sqlite3
 import re
-import threading
+import logging
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, ConversationHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler)
 from collections import Counter
-from flask import Flask, request
-# === Константы ===
 
 ADMIN_CHAT_ID = 5115887933
 BOT_TOKEN = "7986033726:AAHyB1I77N68Z53-YOj1B5uhJLXEuB7XdEU"
-
-WEBHOOK_DOMAIN = "https://metatrexat.up.railway.app"
-WEBHOOK_PATH = f"/{BOT_TOKEN}"
-WEBHOOK_URL = f"{WEBHOOK_DOMAIN}{WEBHOOK_PATH}"
-PORT = int(os.getenv("PORT", 8080))
-flask_app = Flask(__name__)
-
+consultation_chats = {}
 stats_file = "stats.json"
 db_file = "logs.db"
 REVIEWS_DB_FILE = "reviews.db"
 BACKUP_DIR = "reviews_backup"
 MAX_TEXT_LENGTH = 500
-SECRET_MODERATION_CODE = "/140013!"
+SECRET_MODERATION_CODE = "/140013"
 STOP_WORDS = {"и", "в", "на", "с", "по", "за", "к", "для", "это", "не", "а", "о", "у"}
-READING = range(1)
 TITLE, RATING, TEXT, NICKNAME, NICKNAME_CUSTOM, CONFIRM, READING = range(7)
+WAITING_EDIT_TEXT = 10
+ADMIN_READING, ADMIN_EDITING = range(2)
 CONSULTANTS = {
     "andrey": {"id": 5115887933, "name": "Юз Андрей Анатольевич", "username": "@worfeva"},
     "valentin": {"id": 1061541258, "name": "Казанов Валентин Александрович", "username": "@kazanovval"}
 }
+
 payment_links = {
     "yoomoney": "https://yoomoney.ru/to/4100119195367811",
     "paypal": "https://paypal.me/YAndrej",
@@ -90,76 +83,6 @@ async def log_message(update: Update):
     with open(stats_file, "w", encoding="utf-8") as f:
         json.dump(word_counter, f, ensure_ascii=False, indent=2)
 
-# --- Инициализация базы данных отзывов ---
-if not os.path.exists(REVIEWS_DB_FILE):
-    conn = sqlite3.connect(REVIEWS_DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS reviews (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        username TEXT,
-        nickname TEXT,
-        title TEXT,
-        rating INTEGER,
-        text TEXT,
-        approved INTEGER DEFAULT 0,
-        created_at TEXT,
-        admin_message_id INTEGER DEFAULT NULL
-    )
-    """)
-    conn.commit()
-    conn.close()
-
-try:
-    conn_tmp = sqlite3.connect(REVIEWS_DB_FILE)
-    cur_tmp = conn_tmp.cursor()
-    cur_tmp.execute("ALTER TABLE reviews ADD COLUMN admin_message_id INTEGER")
-    conn_tmp.commit()
-    conn_tmp.close()
-except sqlite3.OperationalError:
-    pass
-
-def get_conn():
-    return sqlite3.connect(REVIEWS_DB_FILE, check_same_thread=False)
-
-def backup_db():
-    if not os.path.exists(BACKUP_DIR):
-        os.makedirs(BACKUP_DIR)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    shutil.copyfile(
-        REVIEWS_DB_FILE,
-        os.path.join(BACKUP_DIR, f"reviews_{timestamp}.db")
-    )
-
-def delete_review_and_traces(review_id, context=None):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("SELECT title, text, admin_message_id FROM reviews WHERE id=?", (review_id,))
-    r = cur.fetchone()
-    if not r:
-        conn.close()
-        return None
-
-    title, text_r, admin_message_id = r
-    cur.execute("DELETE FROM reviews WHERE id=?", (review_id,))
-    conn.commit()
-    conn.close()
-
-    try:
-        conn_logs_local = sqlite3.connect("db_file", check_same_thread=False)
-        cur_logs_local = conn_logs_local.cursor()
-        cur_logs_local.execute(
-            "DELETE FROM logs WHERE message = ? OR message = ?",
-            (text_r, title)
-        )
-        conn_logs_local.commit()
-        conn_logs_local.close()
-    except Exception:
-        pass
-
-    return admin_message_id
-
 # === Обработчик команд ==
     # === /stats ===
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -188,11 +111,9 @@ async def start(update, context):
     )
 # === Вопросы ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global word_counter
+    text = update.message.text.strip().lower()
     if not update.message or not update.message.text:
         return
-    text = update.message.text.strip().lower()
-    await log_message(update)
 
     keywords_rf = ["Повышен","ревматоидный","фактор","РФ","положительный"] 
     if any(keyword.lower() in text for keyword in keywords_rf):
@@ -336,8 +257,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keywords_ty = ["спасибо", "благодарю", "реквизиты", "поддержать", "пожертвовать", "помочь"]
     if any(keyword in text for keyword in keywords_ty):
         keyboard = [
-        [InlineKeyboardButton("💳 ЮMoney / Российские платёжные системы", callback_data="yoomoney")],
-        [InlineKeyboardButton("💳 PayPal / ЕС", callback_data="paypal")],
+            [InlineKeyboardButton("🇷🇺 Поддержать проект (Россия)", url=don_russia)],
+            [InlineKeyboardButton("🇪🇺 Поддержать проект (ЕС)", url=don_eu)],
         ]
         await update.message.reply_text(
             "Пожалуйста! Рад был помочь! 😊\n\n"
@@ -393,19 +314,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
     "🧐 К сожалению, я пока что не обучен такой команде. Попробуйте снова"
     )
-# оплаты консультации
+# === Обработчик кнопок ===
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user = query.from_user
     data = query.data
 
-    if data in ["consult_andrey", "consult_valentin"]:
+    if data == "consult_andrey" or data == "consult_valentin":
         consultant = CONSULTANTS["andrey"] if data == "consult_andrey" else CONSULTANTS["valentin"]
         context.user_data["consultant"] = consultant 
 
         keyboard = [
-            [InlineKeyboardButton("Подтвердить", callback_data="start_payment")],
+            [InlineKeyboardButton("Подвердить", callback_data="start_payment")],
             [InlineKeyboardButton("Отмена", callback_data="cancel")]
         ]
         await context.bot.send_message(
@@ -414,7 +335,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-    elif data == "start_payment":
+    elif query.data == "start_payment":
         keyboard = [
             [InlineKeyboardButton("💳 ЮMoney / Российские платёжные системы", callback_data="yoomoney")],
             [InlineKeyboardButton("💳 PayPal / ЕС", callback_data="paypal")],
@@ -474,175 +395,76 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=consultant_chat_id,
             text=notification_text,
             parse_mode="HTML")
-
-# ==================== Модуль отзывов ====================
-async def start_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip().lower()
-    if text != "оставить отзыв":
-        return
-    user_id = update.message.from_user.id
-    conn = get_conn()
+# ===О_Т_З_Ы_В_Ы_ ===
+    # === Инициализация базы ===
+if not os.path.exists(REVIEWS_DB_FILE):
+    conn = sqlite3.connect(REVIEWS_DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM reviews WHERE user_id=?", (user_id,))
-    if cursor.fetchone():
-        await update.message.reply_text("❌ Вы уже оставили отзыв.")
-        conn.close()
-        return ConversationHandler.END
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        username TEXT,
+        nickname TEXT,
+        title TEXT,
+        rating INTEGER,
+        text TEXT,
+        approved INTEGER DEFAULT 0,
+        created_at TEXT,
+        admin_message_id INTEGER DEFAULT NULL
+    )
+    """)
+    conn.commit()
     conn.close()
 
-    await update.message.reply_text(
-        f"👋 Добро пожаловать в систему отзывов об оказанных консультациях проекта «Ревматолог на связи»! Благодарим Вас за обратную связь. Это позволяет нам работать над нашими ошибами и улучшать качество услуг.\n\n"
-        f"❗️ Правила оставления отзывов:\n"
-        f"🕵️ Отзыв можно оставить анонимным\n"
-        f" Один отзыв с аккаунта\n"
-        f"✍ Максимальная длина — {MAX_TEXT_LENGTH} символов\n"
-        f"🔍 Пожалуйста, воздержитесь от нелитературных выражений. Все отзывы проходят модерацию\n\n"
-        "👉 Введите заголовок вашего отзыва:"
+try:
+    conn_tmp = sqlite3.connect(REVIEWS_DB_FILE)
+    cur_tmp = conn_tmp.cursor()
+    cur_tmp.execute("ALTER TABLE reviews ADD COLUMN admin_message_id INTEGER")
+    conn_tmp.commit()
+    conn_tmp.close()
+except sqlite3.OperationalError:
+    pass
+
+def get_conn():
+    return sqlite3.connect(REVIEWS_DB_FILE, check_same_thread=False)
+
+def backup_db():
+    if not os.path.exists(BACKUP_DIR):
+        os.makedirs(BACKUP_DIR)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    shutil.copyfile(
+        REVIEWS_DB_FILE,
+        os.path.join(BACKUP_DIR, f"reviews_{timestamp}.db")
     )
-    return TITLE
 
-# ----------------- REVIEW TITLE -----------------
-async def review_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    title = update.message.text.strip()
-    if not title:
-        await update.message.reply_text("Поле не может быть пустым. Введите снова:")
-        return TITLE
-    context.user_data["review"] = {
-        "title": title,
-        "user_id": update.message.from_user.id,
-        "username": f"@{update.message.from_user.username}" if update.message.from_user.username else None
-    }
-    keyboard = [[InlineKeyboardButton(f"{i}⭐", callback_data=f"rate_{i}") for i in range(1, 6)]]
-    await update.message.reply_text("Дайте Вашу оценку консультации по шкале от 1–5:", reply_markup=InlineKeyboardMarkup(keyboard))
-    return RATING
-
-# ----------------- REVIEW RATING -----------------
-async def review_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    rating = int(query.data.split("_")[1])
-    context.user_data["review"]["rating"] = rating
-    await query.edit_message_text(
-        f"Вы дали оценку: {rating}⭐. Благодарим Вас!\n\nВведите текст отзыва (не более {MAX_TEXT_LENGTH} символов):"
-    )
-    return TEXT
-
-# ----------------- REVIEW TEXT -----------------
-async def review_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-    if len(text) > MAX_TEXT_LENGTH:
-        await update.message.reply_text(
-            f"Превышена максимальная длинна сообщения в {MAX_TEXT_LENGTH} символов. "
-            f"Сократите текст на {len(text) - MAX_TEXT_LENGTH} символов."
-        )
-        return TEXT
-    context.user_data["review"]["text"] = text
-    keyboard = [
-        [InlineKeyboardButton("Использовать ник Telegram", callback_data="nick_username")],
-        [InlineKeyboardButton("Использовать псевдоним", callback_data="nick_custom")]
-    ]
-    await update.message.reply_text("Как подписать отзыв?", reply_markup=InlineKeyboardMarkup(keyboard))
-    return NICKNAME
-
-# ----------------- REVIEW NICKNAME -----------------
-async def review_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data == "nick_username":
-        context.user_data["review"]["nickname"] = context.user_data["review"]["username"] or "Anonymous"
-        await query.edit_message_text("Используем ваш ник Telegram")
-        return await review_confirm(update, context)
-    else:
-        await query.edit_message_text("Введите псевдоним:")
-        return NICKNAME_CUSTOM
-
-async def review_nickname_custom(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    nickname = update.message.text.strip()
-    if not nickname:
-        await update.message.reply_text("Поле не заполнено. Введите снова:")
-        return NICKNAME_CUSTOM
-    context.user_data["review"]["nickname"] = nickname
-    return await review_confirm(update, context)
-
-# ----------------- REVIEW CONFIRM -----------------
-async def review_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    review = context.user_data["review"]
-    text = (
-        f"✨ Проверьте отзыв перед отправкой\n\n"
-        f"**Заголовок:** {review['title']}\n"
-        f"**Оценка:** {'⭐'*review['rating']}\n"
-        f"**Текст:** {review['text']}\n"
-        f"**Автор:** {review['nickname']}"
-    )
-    keyboard = [
-        [InlineKeyboardButton("✅ Отправить на модерацию", callback_data="send_review")],
-        [InlineKeyboardButton("❌ Отменить", callback_data="cancel_review")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    if update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
-    else:
-        await update.message.reply_text(text, reply_markup=reply_markup)
-    return CONFIRM
-
-# ----------------- REVIEW FINAL -----------------
-async def review_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    review = context.user_data["review"]
-
-    if query.data == "send_review":
-        conn = get_conn()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO reviews (user_id, username, nickname, title, rating, text, approved, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-        """, (
-            review["user_id"],
-            review["username"],
-            review["nickname"],
-            review["title"],
-            review["rating"],
-            review["text"],
-            datetime.now().isoformat()
-        ))
-        conn.commit()
-        review_id = cursor.lastrowid
-
-        keyboard = [
-            [InlineKeyboardButton("📖 Прочитать", callback_data=f"admin_read_{review_id}")],
-            [InlineKeyboardButton("✅ Одобрить", callback_data=f"admin_approve_{review_id}"),
-             InlineKeyboardButton("❌ Удалить", callback_data=f"admin_delete_{review_id}")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        sent_msg = await context.bot.send_message(
-            chat_id=ADMIN_CHAT_ID,
-            text=(
-                f"🆕 Новый отзыв (ID {review_id}) от {review['nickname']}\n"
-                f"Заголовок: {review['title']}\n"
-                f"Оценка: {'⭐' * review['rating']}\n"
-                f"{review['text']}"
-            ),
-            reply_markup=reply_markup
-        )
-        try:
-            cursor.execute("ALTER TABLE reviews ADD COLUMN admin_message_id INTEGER")
-        except sqlite3.OperationalError:
-            pass
-        cursor.execute("UPDATE reviews SET admin_message_id = ? WHERE id = ?", (sent_msg.message_id, review_id))
-        conn.commit()
+def delete_review_and_traces(review_id, context=None):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT title, text, admin_message_id FROM reviews WHERE id=?", (review_id,))
+    r = cur.fetchone()
+    if not r:
         conn.close()
-        backup_db()
-        await query.edit_message_text(
-            "✅ Ваш отзыв отправлен на модерацию. Вы будете оповещены об одобрении отзыва. Спасибо Вам за уделённое время!"
+        return None
+
+    title, text_r, admin_message_id = r
+    cur.execute("DELETE FROM reviews WHERE id=?", (review_id,))
+    conn.commit()
+    conn.close()
+
+    try:
+        conn_logs_local = sqlite3.connect("db_file", check_same_thread=False)
+        cur_logs_local = conn_logs_local.cursor()
+        cur_logs_local.execute(
+            "DELETE FROM logs WHERE message = ? OR message = ?",
+            (text_r, title)
         )
-        return ConversationHandler.END
-    else:
-        await query.edit_message_text("❌ Отзыв отменён.")
-        return ConversationHandler.END
-# === READ REVIEWS ===
-async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        conn_logs_local.commit()
+        conn_logs_local.close()
+    except Exception:
+        pass
+    # === Просмотр ===
+async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE, message=None):
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
@@ -652,16 +474,23 @@ async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     if not reviews:
-        await update.message.reply_text("Пока нет одобренных отзывов.")
-        return
+        if message:
+            await message.reply_text("Пока нет одобренных отзывов.")
+        else:
+            await update.message.reply_text("Пока нет одобренных отзывов.")
+        return READING
     keyboard = [
         [InlineKeyboardButton(f"{title} ({'⭐' * rating}) — {nickname}", callback_data=f"user_read_{review_id}")]
         for review_id, title, rating, nickname in reviews
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text("📖 Отзывы:", reply_markup=reply_markup)
-
+    if message:
+        await message.reply_text("📖 Отзывы:", reply_markup=reply_markup)
+    else:
+        await update.message.reply_text("📖 Отзывы:", reply_markup=reply_markup)
+    return READING
+    
 async def user_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -687,98 +516,139 @@ async def user_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text=f"{title} ({rating}⭐)\n\n{text_r}\n\nОт: {nickname}",
         reply_markup=reply_markup
     )
-
+    return READING
+    
 async def user_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await read_reviews(update, context)
+    await read_reviews(update, context, message=query.message)
 
-# === ADMIN CALLBACK ===
-async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
+read_reviews_handler = ConversationHandler(
+    entry_points=[MessageHandler(filters.Regex("(?i)^отзывы$"), read_reviews)],
+    states={
+        READING: [
+            CallbackQueryHandler(user_read_review, pattern=r"^user_read_\d+$"),
+            CallbackQueryHandler(user_back, pattern="^user_back$")
+        ]
+    },
+    fallbacks=[],
+    allow_reentry=True
+)
+# === Администрирование ===
+async def admin_list_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE, from_secret: bool = False):
+    if from_secret and update.effective_user.id != ADMIN_CHAT_ID:
+        return
+
     conn = get_conn()
     cursor = conn.cursor()
-    review_id = int(data.split("_")[-1])
+    cursor.execute("SELECT id, title, rating, nickname, approved FROM reviews ORDER BY created_at DESC")
+    reviews = cursor.fetchall()
+    conn.close()
 
-    if "read" in data:
-        cursor.execute(
-            "SELECT title, rating, nickname, text, approved FROM reviews WHERE id=?",
-            (review_id,)
-        )
-        row = cursor.fetchone()
-        if not row:
-            await query.edit_message_text("❌ Отзыв не найден.")
-            return
+    if not reviews:
+        target = update.message if update.message else update.callback_query.message
+        await target.reply_text("📭 Пока нет отзывов для модерации.")
+        return ADMIN_READING
 
-        title, rating, nickname, text_r, approved = row
+    keyboard = []
+    for review_id, title, rating, nickname, approved in reviews:
+        status = "✅" if approved else "🕓"
+        button_text = f"{status} {title} ({'⭐' * rating}) — {nickname}"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"admin_read_{review_id}")])
 
-        if approved == 0:
-            keyboard = [
-                [InlineKeyboardButton("✅ Одобрить", callback_data=f"admin_approve_{review_id}"),
-                InlineKeyboardButton("❌ Удалить", callback_data=f"admin_delete_{review_id}")],
-                [InlineKeyboardButton("⬅️ Назад", callback_data="admin_back")]
-            ]
-        else:
-            keyboard = [
-                [InlineKeyboardButton("✏️ Редактировать", callback_data=f"admin_edit_{review_id}"),
-                InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_delete_{review_id}")],
-                [InlineKeyboardButton("⬅️ Назад", callback_data="admin_back")]
-            ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    target = update.message if update.message else update.callback_query.message
+    await target.reply_text(
+        "🛠️ *Модерация отзывов:*",
+        parse_mode="Markdown",
+        reply_markup=reply_markup
+    )
+    return ADMIN_READING
 
-        await query.edit_message_text(
-            f"**{title}** ({'⭐'*rating})\n{text_r}\n\n👤 {nickname}",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+    # === Просмотр отзыва ===
+async def admin_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    review_id = int(query.data.split("_")[-1])
 
-    elif "approve" in data:
-        cursor.execute("SELECT title, user_id FROM reviews WHERE id=?", (review_id,))
-        row = cursor.fetchone()
-        if row:
-            title, user_id = row
-        else:
-            title, user_id = "", None
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT title, rating, nickname, text, approved FROM reviews WHERE id=?", (review_id,))
+    title, rating, nickname, text_r, approved = cursor.fetchone()
+    conn.close()
 
-        cursor.execute("UPDATE reviews SET approved=1 WHERE id=?", (review_id,))
-        conn.commit()
-        backup_db()
+    if approved:
+        buttons = [
+            InlineKeyboardButton("✏️ Редактировать", callback_data=f"admin_edit_{review_id}"),
+            InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_delete_{review_id}")
+        ]
+    else:
+        buttons = [
+            InlineKeyboardButton("✅ Одобрить", callback_data=f"admin_approve_{review_id}"),
+            InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_delete_{review_id}")
+        ]
 
-        await query.edit_message_text("✅ Отзыв одобрен и опубликован.")
+    keyboard = [buttons, [InlineKeyboardButton("⬅️ Назад", callback_data="admin_back")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-        if user_id:
-            try:
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=f"✅ Ваш отзыв «{title}» успешно опубликован."
-                )
-            except Exception:
-                pass
+    await query.edit_message_text(
+        f"*{title}* ({rating}⭐)\n\n{text_r}\n\n👤 {nickname}",
+        parse_mode="Markdown",
+        reply_markup=reply_markup
+    )
+    return ADMIN_READING
 
-    elif "delete" in data:
-        cursor.execute("SELECT title, user_id FROM reviews WHERE id=?", (review_id,))
-        row = cursor.fetchone()
-        if row:
-            title, user_id = row
-        else:
-            title, user_id = "", None
+    # === Одобрение ===
+async def admin_approve_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    review_id = int(query.data.split("_")[-1])
 
-        cursor.execute("DELETE FROM reviews WHERE id=?", (review_id,))
-        conn.commit()
-        backup_db()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE reviews SET approved=1 WHERE id=?", (review_id,))
+    cursor.execute("SELECT user_id FROM reviews WHERE id=?", (review_id,))
+    user_row = cursor.fetchone()
+    conn.commit()
+    conn.close()
+    backup_db()
 
-        await query.edit_message_text("🗑️ Отзыв удалён.")
+    # Отправляем уведомление пользователю
+    if user_row and user_row[0]:
+        try:
+            await context.bot.send_message(chat_id=user_row[0], text="✅ Ваш отзыв опубликован! Спасибо!")
+        except Exception:
+            pass
 
-        if user_id:
-            try:
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=f"❌ К сожалению, Ваш отзыв «{title}» не прошёл модерацию и был удалён."
-                )
-            except Exception:
-                pass
-# === ADMIN EDIT REVIEW ===
+    await query.edit_message_text("✅ Отзыв одобрен.")
+    return await admin_list_reviews(update, context)
+
+# === Удаление ===
+async def admin_delete_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    review_id = int(query.data.split("_")[-1])
+
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM reviews WHERE id=?", (review_id,))
+    user_row = cursor.fetchone()
+    cursor.execute("DELETE FROM reviews WHERE id=?", (review_id,))
+    conn.commit()
+    conn.close()
+    backup_db()
+
+    # Уведомляем пользователя
+    if user_row and user_row[0]:
+        try:
+            await context.bot.send_message(chat_id=user_row[0], text="❌ Ваш отзыв не прошёл модерацию и был удалён.")
+        except Exception:
+            pass
+
+    await query.edit_message_text("🗑 Отзыв удалён.")
+    return await admin_list_reviews(update, context)
+
+# === Редактирование ===
 async def admin_edit_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -791,122 +661,249 @@ async def admin_edit_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     context.user_data["edit_review_id"] = review_id
-
     await query.edit_message_text(
         f"📝 *Редактирование отзыва* **{title}**:\n\n"
         f"Текущий текст:\n{text_r}\n\n"
-        f"✍ Введите новый текст отзыва:",
-    parse_mode="Markdown"
-)
-    return "WAITING_EDIT_TEXT"
+        f"✍ Введите новый текст или нажмите 'Отмена'.",
+        parse_mode="Markdown"
+    )
+
+    keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel_edit")]]
+    await query.message.reply_text("💬 Напишите новый текст отзыва:", reply_markup=InlineKeyboardMarkup(keyboard))
+    return ADMIN_EDITING
+
+async def admin_cancel_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    return await admin_back(update, context)
 
 async def admin_save_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    review_id = context.user_data["edit_review_id"]
+    review_id = context.user_data.get("edit_review_id")
     new_text = update.message.text.strip()
+
+    if not new_text:
+        await update.message.reply_text("⚠️ Текст не может быть пустым.")
+        return ADMIN_EDITING
 
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("UPDATE reviews SET text=? WHERE id=?", (new_text, review_id))
     conn.commit()
     conn.close()
-
-    await update.message.reply_text("✅ Текст отзыва успешно обновлён.")
     backup_db()
-    return ConversationHandler.END
-# === Admin Moderation ===
-async def secret_moderation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_CHAT_ID:
-        return    
 
-    conn = get_conn()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, title, rating, nickname, text, approved FROM reviews ORDER BY created_at DESC")
-    reviews = cursor.fetchall()
-    conn.close()
+    await update.message.reply_text("✅ Текст отзыва обновлён.")
+    return await admin_list_reviews(update, context)
 
-    if not reviews:
-        await update.message.reply_text("📭 Пока нет отзывов для модерации.")
+# === Назад к списку ===
+async def admin_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    return await admin_list_reviews(update, context)
+
+# === Вход по секретному коду ===
+async def secret_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return await admin_list_reviews(update, context, from_secret=True)
+
+# === Регистрация хендлеров ===
+moderation_handler = MessageHandler(filters.Regex(f"^{SECRET_MODERATION_CODE}$"), secret_entry)
+
+admin_review_conv = ConversationHandler(
+    entry_points=[moderation_handler],
+    states={
+        ADMIN_READING: [
+            CallbackQueryHandler(admin_read_review, pattern=r"^admin_read_\d+$"),
+            CallbackQueryHandler(admin_approve_review, pattern=r"^admin_approve_\d+$"),  # одобрить
+            CallbackQueryHandler(admin_delete_review, pattern=r"^admin_delete_\d+$"),    # удалить
+            CallbackQueryHandler(admin_edit_review, pattern=r"^admin_edit_\d+$"),
+            CallbackQueryHandler(admin_back, pattern="^admin_back$")
+        ],
+        ADMIN_EDITING: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_edit),
+            CallbackQueryHandler(admin_cancel_edit, pattern="^admin_cancel_edit$")
+        ],
+    },
+    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
+    allow_reentry=True)
+
+# === О_Т_З_Ы_В_Ы_ ===
+    # === Написание ===
+async def start_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip().lower()
+    if text != "оставить отзыв":
         return
 
-    for r in reviews:
-        review_id, title, rating, nickname, text_r, approved = r
-
-    if approved == 0:
-        keyboard = [
-            [
-                InlineKeyboardButton("📖 Прочитать", callback_data=f"admin_read_{review_id}"),
-                InlineKeyboardButton("✅ Одобрить", callback_data=f"admin_approve_{review_id}"),
-                InlineKeyboardButton("❌ Удалить", callback_data=f"admin_delete_{review_id}")
-            ]
-        ]
-    else:
-        keyboard = [
-            [
-                InlineKeyboardButton("📖 Прочитать", callback_data=f"admin_read_{review_id}"),
-                InlineKeyboardButton("✏️ Редактировать", callback_data=f"admin_edit_{review_id}"),
-                InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_delete_{review_id}")
-            ]
-        ]
+    user_id = update.message.from_user.id
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM reviews WHERE user_id=?", (user_id,))
+    if cursor.fetchone():
+        conn.close()
+        await update.message.reply_text("❌ Вы уже оставили отзыв.")
+        return ConversationHandler.END
+    conn.close()
 
     await update.message.reply_text(
-        f"**{title}** ({'⭐'*rating})\n{text_r}\n\n👤 {nickname}",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        f"👋 Добро пожаловать в систему отзывов об оказанных консультациях!\n\n"
+        f"❗️ Правила оставления отзывов:\n"
+        f"🕵️ Отзыв можно оставить анонимным\n"
+        f" Один отзыв с аккаунта\n"
+        f"✍ Максимальная длина — {MAX_TEXT_LENGTH} символов\n"
+        f"🔍 Пожалуйста, воздержитесь от нелитературных выражений. Все отзывы проходят модерацию\n\n"
+        "👉 Введите заголовок вашего отзыва:"
     )
-# ==== Handlers ===
-conv_handler = ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("(?i)^оставить отзыв$"), start_review)],
+    return TITLE
+    # === Заголовок ===
+async def review_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    title = update.message.text.strip()
+    if not title:
+        await update.message.reply_text("Поле не может быть пустым. Введите снова:")
+        return TITLE
+
+    context.user_data["review"] = {
+        "title": title,
+        "user_id": update.message.from_user.id,
+        "username": f"@{update.message.from_user.username}" if update.message.from_user.username else "Anonymous"
+    }
+
+    keyboard = [[InlineKeyboardButton(f"{i}⭐", callback_data=f"rate_{i}") for i in range(1, 6)]]
+    await update.message.reply_text("Дайте Вашу оценку консультации по шкале от 1–5:", reply_markup=InlineKeyboardMarkup(keyboard))
+    return RATING
+    # === Оценка ===
+async def review_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    rating = int(query.data.split("_")[1])
+    context.user_data["review"]["rating"] = rating
+
+    await query.edit_message_text(
+        f"Вы дали оценку: {rating}⭐. Благодарим Вас!\n\nВведите текст отзыва (не более {MAX_TEXT_LENGTH} символов):"
+    )
+    return TEXT
+    # === Подпись ===
+async def review_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    if len(text) > MAX_TEXT_LENGTH:
+        await update.message.reply_text(
+            f"Превышена максимальная длинна сообщения в {MAX_TEXT_LENGTH} символов. "
+            f"Сократите текст на {len(text) - MAX_TEXT_LENGTH} символов."
+        )
+        return TEXT
+    context.user_data["review"]["text"] = text
+    keyboard = [
+        [InlineKeyboardButton("Использовать ник Telegram", callback_data="nick_username")],
+        [InlineKeyboardButton("Использовать псевдоним", callback_data="nick_custom")]
+    ]
+    await update.message.reply_text("Как подписать отзыв?", reply_markup=InlineKeyboardMarkup(keyboard))
+    return NICKNAME
+async def review_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.data == "nick_username":
+        context.user_data["review"]["nickname"] = context.user_data["review"]["username"] or "Anonymous"
+        await query.edit_message_text("Используем ваш ник Telegram")
+        return await review_confirm(update, context)
+    else:
+        await query.edit_message_text("Введите псевдоним:")
+        return NICKNAME_CUSTOM
+
+async def review_nickname_custom(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    nickname = update.message.text.strip()
+    if not nickname:
+        await update.message.reply_text("Поле не заполнено. Введите снова:")
+        return NICKNAME_CUSTOM
+    context.user_data["review"]["nickname"] = nickname
+    return await review_confirm(update, context)
+    # === Подтверждение ===
+async def review_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    review = context.user_data["review"]
+    date_str = datetime.now().strftime("%d.%m.%Y")
+    text = (
+        f"✨ Проверьте отзыв перед отправкой\n\n"
+        f"**Заголовок:** {review['title']}\n"
+        f"**Оценка:** {'⭐'*review['rating']}\n"
+        f"**Текст:** {review['text']}\n"
+        f"**Автор:** {review['nickname']}"
+        f"**Дата:** {date_str}"
+    )
+    keyboard = [
+        [InlineKeyboardButton("✅ Отправить на модерацию", callback_data="send_review")],
+        [InlineKeyboardButton("❌ Отменить", callback_data="cancel_review")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup)
+    return CONFIRM
+    # === Отправка ===
+async def review_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    review = context.user_data["review"]
+
+    if query.data == "send_review":
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO reviews (user_id, username, nickname, title, rating, text, approved, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+        """, (
+            review["user_id"],
+            review["username"],
+            review["nickname"],
+            review["title"],
+            review["rating"],
+            review["text"],
+            datetime.now().isoformat()
+        ))
+        conn.commit()
+        review_id = cursor.lastrowid
+        conn.close()
+        backup_db()
+
+        await context.bot.send_message(
+            chat_id=ADMIN_CHAT_ID,
+            text=(
+                f"🆕 Новый отзыв от {review['nickname']}\n"
+                f"Оценка: {'⭐' * review['rating']}\n")
+        )
+        await query.edit_message_text(
+            "✅ Ваш отзыв отправлен на модерацию. Вы будете оповещены об одобрении отзыва. Спасибо!"
+        )
+        return ConversationHandler.END
+    else:
+        await query.edit_message_text("❌ Отзыв отменён.")
+        return ConversationHandler.END
+review_conv = ConversationHandler(
+    entry_points=[MessageHandler(filters.Regex(r"(?i)^оставить отзыв$"), start_review)],
     states={
         TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, review_title)],
-        RATING: [CallbackQueryHandler(review_rating, pattern=r"^rate_\d$")],
+        RATING: [CallbackQueryHandler(review_rating, pattern=r"^rate_\d+$")],
         TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, review_text)],
-        NICKNAME: [CallbackQueryHandler(review_nickname, pattern="^(nick_username|nick_custom)$")],
+        NICKNAME: [CallbackQueryHandler(review_nickname, pattern="^nick_")],
         NICKNAME_CUSTOM: [MessageHandler(filters.TEXT & ~filters.COMMAND, review_nickname_custom)],
-        CONFIRM: [CallbackQueryHandler(review_final, pattern="^(send_review|cancel_review)$")]
+        CONFIRM: [CallbackQueryHandler(review_final, pattern="^(send_review|cancel_review)$")],
     },
     fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
-    per_user=True)
-edit_review_conv = ConversationHandler(
-    entry_points=[CallbackQueryHandler(admin_edit_review, pattern=r"^admin_edit_\d+$")],
-    states={
-        "WAITING_EDIT_TEXT": [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_edit)],
-    },
-    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
-    per_user=True
-)
-read_reviews_handler = ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("(?i)^отзывы$"), read_reviews)],
-    states={
-        READING: [
-            CallbackQueryHandler(user_read_review, pattern=r"^user_read_\d+$"),
-            CallbackQueryHandler(user_back, pattern="^user_back$")
-        ]
-    },
-    fallbacks=[],
     allow_reentry=True
 )
-moderation_handler = MessageHandler(
-    filters.Regex(f"^{SECRET_MODERATION_CODE}$"),
-    secret_moderation
-)
-def setup_handlers(app):
-    app.add_handler(edit_review_conv)
-    app.add_handler(read_reviews_handler)
-    app.add_handler(conv_handler)
-    app.add_handler(moderation_handler)
-    app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stats", stats))
-    app.add_handler(CallbackQueryHandler(user_read_review, pattern=r"^user_read_\d+$"))
-    app.add_handler(CallbackQueryHandler(user_back, pattern="^user_back$"))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(?!admin_).*"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-if __name__ == "__main__":
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
-    setup_handlers(application)
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=WEBHOOK_URL
-    )
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(review_conv)
+    app.add_handler(admin_review_conv)
+    app.add_handler(read_reviews_handler)
+    app.add_handler(moderation_handler)
+    app.add_handler(CommandHandler("start", handle_message))
+    app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.run_polling()
+
+if __name__ == "__main__": 
+            main()
