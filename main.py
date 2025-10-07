@@ -912,14 +912,7 @@ def setup_handlers(app):
 async def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     setup_handlers(app)
-    await app.bot.delete_webhook(drop_pending_updates=True)
-    await app.start_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url_path="/"
-    )
-    await app.bot.set_webhook(WEBHOOK_URL)
-    await app.idle()
+    await app.run_polling()
 
 if __name__ == "__main__":
     import asyncio
