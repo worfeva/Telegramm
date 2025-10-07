@@ -14,7 +14,6 @@ ADMIN_CHAT_ID = 5115887933
 BOT_TOKEN = "7986033726:AAHyB1I77N68Z53-YOj1B5uhJLXEuB7XdEU"
 bot = Bot(token=BOT_TOKEN)
 app = ApplicationBuilder().token(BOT_TOKEN).build()
-PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://telegramm-production.up.railway.app")
 consultation_chats = {}
 stats_file = "stats.json"
 db_file = "logs.db"
@@ -908,12 +907,12 @@ def main():
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.bot.delete_webhook()
+    app.bot.delete_webhook(drop_pending_updates=True)
     app.run_webhook(
         listen="0.0.0.0",
         port=int(os.environ.get("PORT", 8443)),
-        webhook_url=f"{PUBLIC_URL}/{BOT_TOKEN}",
-        drop_pending_updates=True
+        webhook_url=f"https://telegramm-production.up.railway.app/{BOT_TOKEN}",
+        
     )
 if __name__ == "__main__": 
     main()
