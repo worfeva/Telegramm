@@ -4,15 +4,22 @@ import json
 import shutil
 import sqlite3
 import re
+import logging
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, ConversationHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler)
+from telegram.ext import (ApplicationBuilder, CommandHandler, ConversationHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler)
 from collections import Counter
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 # === Константы ===
 
 ADMIN_CHAT_ID = 5115887933
 BOT_TOKEN = "7986033726:AAHyB1I77N68Z53-YOj1B5uhJLXEuB7XdEU"
+PORT = int(os.environ.get("PORT", 8443))
+WEBHOOK_URL = "https://metatrexat.up.railway.app"
 stats_file = "stats.json"
 db_file = "logs.db"
 REVIEWS_DB_FILE = "reviews.db"
@@ -908,10 +915,13 @@ def setup_handlers(app):
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
 async def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    setup_handlers(app)
-    await app.run_polling()
+    await app.bot.set_webhook(WEBHOOK_URL)
+    await app.updater.start_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=BOT_TOKEN
+    )
+    await app.updater.idle()
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
