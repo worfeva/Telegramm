@@ -5,7 +5,7 @@ import shutil
 import sqlite3
 import re
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, ConversationHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler)
 from collections import Counter
@@ -13,8 +13,6 @@ from collections import Counter
 
 ADMIN_CHAT_ID = 5115887933
 BOT_TOKEN = "7986033726:AAHyB1I77N68Z53-YOj1B5uhJLXEuB7XdEU"
-WEBHOOK_URL = "https://metatrexat.up.railway.app" 
-PORT = int(os.environ.get("PORT", 8443))
 stats_file = "stats.json"
 db_file = "logs.db"
 REVIEWS_DB_FILE = "reviews.db"
