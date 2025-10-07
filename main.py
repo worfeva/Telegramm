@@ -915,7 +915,7 @@ def webhook():
 async def main():
     global bot, application
     application = ApplicationBuilder().token(BOT_TOKEN).build()
-    setup_handlers(app)
+    setup_handlers(application)
     await application.initialize()
     bot = application.bot
     await bot.delete_webhook()
