@@ -30,7 +30,7 @@ MAX_TEXT_LENGTH = 500
 SECRET_MODERATION_CODE = "/140013!"
 STOP_WORDS = {"и", "в", "на", "с", "по", "за", "к", "для", "это", "не", "а", "о", "у"}
 READING = range(1)
-TITLE, RATING, TEXT, NICKNAME, NICKNAME_CUSTOM, CONFIRM = range(6)
+TITLE, RATING, TEXT, NICKNAME, NICKNAME_CUSTOM, CONFIRM, READING = range(7)
 CONSULTANTS = {
     "andrey": {"id": 5115887933, "name": "Юз Андрей Анатольевич", "username": "@worfeva"},
     "valentin": {"id": 1061541258, "name": "Казанов Валентин Александрович", "username": "@kazanovval"}
@@ -911,21 +911,14 @@ def webhook():
     update = Update.de_json(request.get_json(force=True), bot)
     asyncio.create_task(application.process_update(update))
     return "ok", 200
-
-def run_flask():
-    flask_app.run(host="0.0.0.0", port=PORT)
-
+    
 async def main():
     global bot, application
     application = ApplicationBuilder().token(BOT_TOKEN).build()
-    setup_handlers(application)
+    await application.initialize()
     bot = application.bot
     await bot.delete_webhook()
     await bot.set_webhook(WEBHOOK_URL)
     print(f"🌐 Webhook установлен: {WEBHOOK_URL}")
 
-    while True:
-        await asyncio.sleep(60)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.run(main())
