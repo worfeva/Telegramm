@@ -21,6 +21,7 @@ MAX_TEXT_LENGTH = 500
 SECRET_MODERATION_CODE = "/140013!"
 STOP_WORDS = {"и", "в", "на", "с", "по", "за", "к", "для", "это", "не", "а", "о", "у"}
 TITLE, RATING, TEXT, NICKNAME, NICKNAME_CUSTOM, CONFIRM = range(6)
+READING = range(1)
 CONSULTANTS = {
     "andrey": {"id": 5115887933, "name": "Юз Андрей Анатольевич", "username": "@worfeva"},
     "valentin": {"id": 1061541258, "name": "Казанов Валентин Александрович", "username": "@kazanovval"}
@@ -715,10 +716,6 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             (review_id,)
         )
         row = cursor.fetchone()
-        if not row:
-            await query.edit_message_text("❌ Отзыв не найден.")
-            return
-
         title, rating, nickname, text_r, approved = row
 
         if approved == 0:
@@ -827,7 +824,11 @@ async def secret_moderation(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, title, rating, nickname, text, approved FROM reviews ORDER BY created_at DESC")
+    cursor.execute("""
+        SELECT id, title, rating, nickname, text, approved
+        FROM reviews
+        ORDER BY created_at DESC
+    """)
     reviews = cursor.fetchall()
     conn.close()
 
@@ -835,31 +836,29 @@ async def secret_moderation(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📭 Пока нет отзывов для модерации.")
         return
 
-    for r in reviews:
-        review_id, title, rating, nickname, text_r, approved = r
-
-    if approved == 0:
-        keyboard = [
-            [
-                InlineKeyboardButton("📖 Прочитать", callback_data=f"admin_read_{review_id}"),
-                InlineKeyboardButton("✅ Одобрить", callback_data=f"admin_approve_{review_id}"),
-                InlineKeyboardButton("❌ Удалить", callback_data=f"admin_delete_{review_id}")
+    for review_id, title, rating, nickname, text_r, approved in reviews:
+        if approved == 0:
+            keyboard = [
+                [
+                    InlineKeyboardButton("📖 Прочитать", callback_data=f"admin_read_{review_id}"),
+                    InlineKeyboardButton("✅ Одобрить", callback_data=f"admin_approve_{review_id}"),
+                    InlineKeyboardButton("❌ Удалить", callback_data=f"admin_delete_{review_id}")
+                ]
             ]
-        ]
-    else:
-        keyboard = [
-            [
-                InlineKeyboardButton("📖 Прочитать", callback_data=f"admin_read_{review_id}"),
-                InlineKeyboardButton("✏️ Редактировать", callback_data=f"admin_edit_{review_id}"),
-                InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_delete_{review_id}")
+        else:
+            keyboard = [
+                [
+                    InlineKeyboardButton("📖 Прочитать", callback_data=f"admin_read_{review_id}"),
+                    InlineKeyboardButton("✏️ Редактировать", callback_data=f"admin_edit_{review_id}"),
+                    InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_delete_{review_id}")
+                ]
             ]
-        ]
 
-    await update.message.reply_text(
-        f"**{title}** ({'⭐'*rating})\n{text_r}\n\n👤 {nickname}",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+        await update.message.reply_text(
+            f"**{title}** ({'⭐'*rating})\n{text_r}\n\n👤 {nickname}",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 # ==== Handlers ===
 review_conv_handler = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex("(?i)^оставить отзыв$"), start_review)],
@@ -879,26 +878,35 @@ edit_review_conv = ConversationHandler(
         "WAITING_EDIT_TEXT": [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_edit)],
     },
     fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
-    per_user=True
-)
+    per_user=True)
+read_reviews_handler = ConversationHandler(
+    entry_points=[MessageHandler(filters.Regex("(?i)^отзывы$"), read_reviews)],
+    states={
+        READING: [
+            CallbackQueryHandler(user_read_review, pattern=r"^user_read_\d+$"),
+            CallbackQueryHandler(user_back, pattern="^user_back$")
+        ]
+    },
+    fallbacks=[],
+    allow_reentry=True)
 
 moderation_handler = MessageHandler(
     filters.Regex(f"^{SECRET_MODERATION_CODE}$"),
     secret_moderation
 )
 def setup_handlers(app):
+    app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
+    app.add_handler(moderation_handler)
     app.add_handler(edit_review_conv)
     app.add_handler(review_conv_handler)
-    app.add_handler(moderation_handler)
-    app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
-    app.add_handler(MessageHandler(filters.Regex("(?i)^отзывы$"), read_reviews))
+    app.add_handler(read_reviews_handler)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CallbackQueryHandler(user_read_review, pattern=r"^user_read_\d+$"))
     app.add_handler(CallbackQueryHandler(user_back, pattern="^user_back$"))
     app.add_handler(CallbackQueryHandler(button_handler, pattern="^(?!admin_).*"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
+    
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     setup_handlers(app)
