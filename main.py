@@ -863,7 +863,7 @@ async def secret_moderation(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 # ==== Handlers ===
-conv_handler = ConversationHandler(
+review_conv_handler = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex("(?i)^оставить отзыв$"), start_review)],
     states={
         TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, review_title)],
@@ -890,11 +890,10 @@ moderation_handler = MessageHandler(
 )
 def setup_handlers(app):
     app.add_handler(edit_review_conv)
-    app.add_handler(conv_handler)
+    app.add_handler(review_conv_handler)
     app.add_handler(moderation_handler)
     app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
     app.add_handler(MessageHandler(filters.Regex("(?i)^отзывы$"), read_reviews))
-    app.add_handler(MessageHandler(filters.Regex("(?i)^оставить отзыв$"), start_review))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CallbackQueryHandler(user_read_review, pattern=r"^user_read_\d+$"))
