@@ -383,7 +383,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
     "🧐 К сожалению, я пока что не обучен такой команде. Попробуйте снова"
     )
-# оплаты консультации
+# === Оплата консультации ===
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -465,7 +465,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=notification_text,
             parse_mode="HTML")
 
-# ==================== Модуль отзывов ====================
+# === Модуль отзывов ===
 async def start_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip().lower()
     if text != "оставить отзыв":
@@ -491,7 +491,7 @@ async def start_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return TITLE
 
-# ----------------- REVIEW TITLE -----------------
+    # === Заголовок ===
 async def review_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title = update.message.text.strip()
     if not title:
@@ -506,7 +506,7 @@ async def review_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Дайте Вашу оценку консультации по шкале от 1–5:", reply_markup=InlineKeyboardMarkup(keyboard))
     return RATING
 
-# ----------------- REVIEW RATING -----------------
+    # === Рейтинг ===
 async def review_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -517,7 +517,7 @@ async def review_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return TEXT
 
-# ----------------- REVIEW TEXT -----------------
+    # === Текст ===
 async def review_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     if len(text) > MAX_TEXT_LENGTH:
@@ -534,7 +534,7 @@ async def review_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Как подписать отзыв?", reply_markup=InlineKeyboardMarkup(keyboard))
     return NICKNAME
 
-# ----------------- REVIEW NICKNAME -----------------
+    # === Псевдоним ===
 async def review_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -553,8 +553,8 @@ async def review_nickname_custom(update: Update, context: ContextTypes.DEFAULT_T
         return NICKNAME_CUSTOM
     context.user_data["review"]["nickname"] = nickname
     return await review_confirm(update, context)
-
-# ----------------- REVIEW CONFIRM -----------------
+    
+    # === Подтверждение ===
 async def review_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     review = context.user_data["review"]
     text = (
@@ -575,7 +575,7 @@ async def review_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=reply_markup)
     return CONFIRM
 
-# ----------------- REVIEW FINAL -----------------
+    # === Финал ===
 async def review_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -631,14 +631,15 @@ async def review_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.edit_message_text("❌ Отзыв отменён.")
         return ConversationHandler.END
-# === READ REVIEWS ===
+
+# === Чтение отзывов ===
 async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = getattr(update, "message", None)
     query = getattr(update, "callback_query", None)
 
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, title, rating, nickname, created_at FROM reviews WHERE approved=1 ORDER BY created_at DESC""")
+    cursor.execute("""SELECT created_at, title, nickname, rating   FROM reviews WHERE approved=1 ORDER BY created_at DESC""")
     reviews = cursor.fetchall()
     conn.close()
 
@@ -651,9 +652,9 @@ async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     keyboard = [
-        [InlineKeyboardButton(f"{created_at.split('T')[0]} - {nickname} - {title} - {rating}⭐", callback_data=f"user_read_{review_id}")
+        [InlineKeyboardButton(f"{created_at.split('T')[0]} - {nickname} - {title} - {rating}⭐", callback_data=f"user_read_{i}")
         ]
-        for review_id, title, rating, nickname in reviews
+        for i, (created_at, nickname, title, rating) in enumerate(reviews)
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -667,23 +668,20 @@ async def user_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    parts = query.data.split("_")
-    if len(parts) != 3 or not parts[2].isdigit():
-        await query.answer("Неверный отзыв", show_alert=True)
-        return
-    review_id = int(parts[2])
+    index = int(query.data.split("_")[-1])  
 
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT title, rating, nickname, text FROM reviews WHERE id=?", (review_id,))
-    review = cursor.fetchone()
+    cursor.execute("""
+        SELECT created_at, nickname, title, rating, text
+        FROM reviews
+        WHERE approved = 1
+        ORDER BY created_at DESC
+    """)
+    reviews = cursor.fetchall()
     conn.close()
 
-    if not review:
-        await query.answer("Отзыв не найден", show_alert=True)
-        return
-
-    title, rating, nickname, text_r = review
+    created_at, nickname, title, rating, text_r = reviews[index]
 
     keyboard = [
         [
