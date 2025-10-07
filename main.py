@@ -19,7 +19,7 @@ logging.basicConfig(
 ADMIN_CHAT_ID = 5115887933
 BOT_TOKEN = "7986033726:AAHyB1I77N68Z53-YOj1B5uhJLXEuB7XdEU"
 PORT = int(os.environ.get("PORT", 8443))
-WEBHOOK_URL = "https://metatrexat.up.railway.app"
+WEBHOOK_URL = f"https://{os.environ.get('PROJECT_DOMAIN')}.up.railway.app/{BOT_TOKEN}"
 stats_file = "stats.json"
 db_file = "logs.db"
 REVIEWS_DB_FILE = "reviews.db"
@@ -915,13 +915,14 @@ def setup_handlers(app):
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
 async def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
     await app.bot.set_webhook(WEBHOOK_URL)
     await app.updater.start_webhook(
         listen="0.0.0.0",
         port=PORT,
         url_path=BOT_TOKEN
     )
-    await app.updater.idle()
+    await app.idle()
 
 if __name__ == "__main__":
     asyncio.run(main())
