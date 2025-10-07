@@ -1,4 +1,5 @@
 import os
+import asyncio
 import json
 import shutil
 import sqlite3
@@ -12,6 +13,9 @@ from collections import Counter
 
 ADMIN_CHAT_ID = 5115887933
 BOT_TOKEN = "7986033726:AAHyB1I77N68Z53-YOj1B5uhJLXEuB7XdEU"
+bot = Bot(token=BOT_TOKEN)
+app = ApplicationBuilder().token(BOT_TOKEN).build()
+PUBLIC_URL = "https://telegramm-production.up.railway.app"
 consultation_chats = {}
 stats_file = "stats.json"
 db_file = "logs.db"
@@ -705,27 +709,6 @@ async def admin_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def secret_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await admin_list_reviews(update, context, from_secret=True)
 
-# === Регистрация хендлеров ===
-moderation_handler = MessageHandler(filters.Regex(f"^{SECRET_MODERATION_CODE}$"), secret_entry)
-
-admin_review_conv = ConversationHandler(
-    entry_points=[moderation_handler],
-    states={
-        ADMIN_READING: [
-            CallbackQueryHandler(admin_read_review, pattern=r"^admin_read_\d+$"),
-            CallbackQueryHandler(admin_approve_review, pattern=r"^admin_approve_\d+$"),  # одобрить
-            CallbackQueryHandler(admin_delete_review, pattern=r"^admin_delete_\d+$"),    # удалить
-            CallbackQueryHandler(admin_edit_review, pattern=r"^admin_edit_\d+$"),
-            CallbackQueryHandler(admin_back, pattern="^admin_back$")
-        ],
-        ADMIN_EDITING: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_edit),
-            CallbackQueryHandler(admin_cancel_edit, pattern="^admin_cancel_edit$")
-        ],
-    },
-    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
-    allow_reentry=True)
-
 # === О_Т_З_Ы_В_Ы_ ===
     # === Написание ===
 async def start_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -876,6 +859,26 @@ async def review_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.edit_message_text("❌ Отзыв отменён.")
         return ConversationHandler.END
+# === Регистрация хендлеров ===
+moderation_handler = MessageHandler(filters.Regex(f"^{SECRET_MODERATION_CODE}$"), secret_entry)
+
+admin_review_conv = ConversationHandler(
+    entry_points=[moderation_handler],
+    states={
+        ADMIN_READING: [
+            CallbackQueryHandler(admin_read_review, pattern=r"^admin_read_\d+$"),
+            CallbackQueryHandler(admin_approve_review, pattern=r"^admin_approve_\d+$"),  # одобрить
+            CallbackQueryHandler(admin_delete_review, pattern=r"^admin_delete_\d+$"),    # удалить
+            CallbackQueryHandler(admin_edit_review, pattern=r"^admin_edit_\d+$"),
+            CallbackQueryHandler(admin_back, pattern="^admin_back$")
+        ],
+        ADMIN_EDITING: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_edit),
+            CallbackQueryHandler(admin_cancel_edit, pattern="^admin_cancel_edit$")
+        ],
+    },
+    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
+    allow_reentry=True)
 review_conv = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex(r"(?i)^оставить отзыв$"), start_review)],
     states={
@@ -893,8 +896,11 @@ review_conv = ConversationHandler(
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
-def main():
+logger = logging.getLogger(__name__)
+
+async def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+   
     app.add_handler(review_conv)
     app.add_handler(admin_review_conv)
     app.add_handler(read_reviews_handler)
@@ -903,7 +909,11 @@ def main():
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.run_polling()
-
+    await app.bot.delete_webhook()
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=int(os.environ.get("PORT", 8443)),
+        webhook_url=f"{PUBLIC_URL}/{BOT_TOKEN}"
+    )
 if __name__ == "__main__": 
-            main()
+    asyncio.run(main())    
