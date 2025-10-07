@@ -19,6 +19,7 @@ WEBHOOK_DOMAIN = "https://metatrexat.up.railway.app"
 WEBHOOK_PATH = f"/{BOT_TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_DOMAIN}{WEBHOOK_PATH}"
 PORT = int(os.getenv("PORT", 8080))
+flask_app = Flask(__name__)
 stats_file = "stats.json"
 db_file = "logs.db"
 REVIEWS_DB_FILE = "reviews.db"
@@ -903,7 +904,7 @@ def setup_handlers(app):
 
 @flask_app.route("/", methods=["GET"])
 def home():
-    return "✅ Bot is alive and running on Railway!", 200
+    return "✅ Bot is alive!", 200
 
 @flask_app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
@@ -916,10 +917,9 @@ def run_flask():
 
 async def main():
     global bot, application
-    bot = Bot(BOT_TOKEN)
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     setup_handlers(application)
-
+    bot = application.bot
     await bot.delete_webhook()
     await bot.set_webhook(WEBHOOK_URL)
     print(f"🌐 Webhook установлен: {WEBHOOK_URL}")
