@@ -895,23 +895,17 @@ def setup_handlers(app):
     app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
     app.add_handler(MessageHandler(filters.Regex("(?i)^отзывы$"), read_reviews))
     app.add_handler(MessageHandler(filters.Regex("(?i)^оставить отзыв$"), start_review))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CallbackQueryHandler(user_read_review, pattern=r"^user_read_\d+$"))
     app.add_handler(CallbackQueryHandler(user_back, pattern="^user_back$"))
     app.add_handler(CallbackQueryHandler(button_handler, pattern="^(?!admin_).*"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-async def clear_webhook():
-    bot = Bot(BOT_TOKEN)
-    await bot.delete_webhook(drop_pending_updates=True)
-
-async def main(): 
-    await clear_webhook() 
-    app = ApplicationBuilder().token(BOT_TOKEN).build() 
+def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
     setup_handlers(app)
     app.run_polling()
 
 if __name__ == "__main__": 
-    import asyncio
-    asyncio.run(main())
+            main()
