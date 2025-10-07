@@ -171,7 +171,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
             stats_text += f"• {word} — {count} раз(а)\n"
 
     await update.message.reply_text(stats_text)
-    
+
 # === /start ===
 async def start(update, context):
     await update.message.reply_text("Чем я могу Вам помочь?"
@@ -894,6 +894,7 @@ def setup_handlers(app):
     app.add_handler(moderation_handler)
     app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
     app.add_handler(MessageHandler(filters.Regex("(?i)^отзывы$"), read_reviews))
+    app.add_handler(MessageHandler(filters.Regex("(?i)^оставить отзыв$"), start_review))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats))
@@ -901,22 +902,16 @@ def setup_handlers(app):
     app.add_handler(CallbackQueryHandler(user_back, pattern="^user_back$"))
     app.add_handler(CallbackQueryHandler(button_handler, pattern="^(?!admin_).*"))
 
-# === Webhook ===    
 async def clear_webhook():
     bot = Bot(BOT_TOKEN)
     await bot.delete_webhook(drop_pending_updates=True)
-async def main_async():
-    await clear_webhook()
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    setup_handlers(app)
-    await app.run_polling()
-# === Главная функция ===
-def main():
-    import asyncio
-    asyncio.run(clear_webhook()) 
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+async def main(): 
+    await clear_webhook() 
+    app = ApplicationBuilder().token(BOT_TOKEN).build() 
     setup_handlers(app)
     app.run_polling()
 
 if __name__ == "__main__": 
-            main()
+    import asyncio
+    asyncio.run(main())
