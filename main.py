@@ -13,8 +13,9 @@ from collections import Counter
 ADMIN_CHAT_ID = 5115887933
 BOT_TOKEN = "7986033726:AAHyB1I77N68Z53-YOj1B5uhJLXEuB7XdEU"
 consultation_chats = {}
-stats_file = "stats.json"
-db_file = "logs.db"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+stats_file = os.path.join(BASE_DIR, "stats.json")
+db_file = os.path.join(BASE_DIR, "logs.db")
 REVIEWS_DB_FILE = "reviews.db"
 BACKUP_DIR = "reviews_backup"
 MAX_TEXT_LENGTH = 1000
