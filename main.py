@@ -87,7 +87,6 @@ async def log_message(update: Update):
 # === Обработчик команд ==
     # === /stats ===
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await log_message(update)
     cursor_logs.execute("SELECT message FROM logs")
     all_messages = cursor_logs.fetchall()
     words = []
@@ -904,6 +903,7 @@ def main():
     app.add_handler(moderation_handler)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, log_message))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.run_polling(drop_pending_updates=True)
