@@ -86,6 +86,7 @@ async def log_message(update: Update):
 # === Обработчик команд ==
     # === /stats ===
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await log_message(update)
     cursor_logs.execute("SELECT message FROM logs")
     all_messages = cursor_logs.fetchall()
     words = []
