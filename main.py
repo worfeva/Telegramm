@@ -468,7 +468,7 @@ def delete_review_and_traces(review_id, context=None):
         pass
     # === Просмотр ===
 READING = 1
-async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE, message=None):
+async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["conversation"] = True
     conn = sqlite3.connect(REVIEWS_DB_FILE)
     cursor = conn.cursor()
