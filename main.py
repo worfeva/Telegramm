@@ -604,7 +604,6 @@ async def admin_list_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE,
     context.user_data["admin_reviews"] = reviews
     context.user_data["admin_page"] = page
 
-    # --- строим клавиатуру только для текущей страницы ---
     start = page * ADMIN_PAGE_SIZE
     end = start + ADMIN_PAGE_SIZE
     reviews_page = reviews[start:end]
@@ -637,17 +636,15 @@ async def admin_list_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE,
 async def admin_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
-    reviews = context.user_data.get("admin_reviews", [])
-    page = context.user_data.get("admin_page", 0)
 
+    page = context.user_data.get("admin_page", 0)
     if query.data == "admin_next":
         page += 1
     elif query.data == "admin_prev":
         page -= 1
-
     context.user_data["admin_page"] = page
-    await admin_list_reviews(update, context, page=page)
+
+    return await admin_list_reviews(update, context)
 
 async def admin_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -786,6 +783,11 @@ async def admin_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # === Вход по секретному коду ===
 async def secret_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("admin_started"):
+        return ADMIN_READING
+        
+    context.user_data["admin_started"] = True
+    context.user_data["admin_page"] = 0
     return await admin_list_reviews(update, context, from_secret=True)
 
 # === Регистрация хендлеров ===
@@ -800,7 +802,7 @@ admin_review_conv = ConversationHandler(
             CallbackQueryHandler(admin_delete_review, pattern=r"^admin_delete_\d+$"),
             CallbackQueryHandler(admin_edit_review, pattern=r"^admin_edit_\d+$"),
             CallbackQueryHandler(admin_back, pattern="^admin_back$"),
-            CallbackQueryHandler(admin_navigation, pattern=r"^admin_(next|prev)$")
+            CallbackQueryHandler(admin_navigation, pattern="^admin_(next|prev)$")
         ],
         ADMIN_EDITING: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_edit),
