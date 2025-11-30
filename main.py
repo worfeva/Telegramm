@@ -64,7 +64,7 @@ if os.path.exists(stats_file):
         except json.JSONDecodeError:
             word_counter = {}
 
-async def log_message(update: Updateб context: ContextTypes.DEFAULT_TYPE):
+async def log_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global word_counter
     if not update.message or not update.message.text:
         return
