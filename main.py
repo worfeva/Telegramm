@@ -58,7 +58,7 @@ conn_logs.commit()
 
 word_counter = {}
 if os.path.exists():
-    with open(, "r", encoding="utf-8") as f:
+    with open(STATS_FILE, "r", encoding="utf-8") as f:
         try:
             word_counter = json.load(f)
         except json.JSONDecodeError:
