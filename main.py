@@ -260,8 +260,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keywords_ty = ["спасибо", "благодарю", "реквизиты", "поддержать", "пожертвовать", "помочь"]
     if any(keyword in text for keyword in keywords_ty):
         keyboard = [
-            [InlineKeyboardButton("🇷🇺 Поддержать проект (Россия)", url=don_russia)],
-            [InlineKeyboardButton("🇪🇺 Поддержать проект (ЕС)", url=don_eu)],
+            [InlineKeyboardButton("💳 Поддержать через YooMoney", url=payment_links["yoomoney"])],
+            [InlineKeyboardButton("💳 Поддержать через PayPal", url=payment_links["paypal"])],
+            [InlineKeyboardButton("💳 Поддержать через Сбербанк", url=payment_links["sberbank"])],
         ]
         await update.message.reply_text(
             "Пожалуйста! Рад был помочь! 😊\n\n"
