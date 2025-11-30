@@ -585,6 +585,7 @@ read_reviews_handler = ConversationHandler(
     allow_reentry=True
 )
 # === Администрирование ===
+ADMIN_PAGE_SIZE = 10
 async def admin_list_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE, from_secret: bool = False):
     if from_secret and update.effective_user.id != ADMIN_CHAT_ID:
         return
