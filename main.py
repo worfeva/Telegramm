@@ -623,7 +623,7 @@ async def admin_list_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE,
     if nav_buttons:
         keyboard.append(nav_buttons)
 
-     reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = InlineKeyboardMarkup(keyboard)
     target = update.message if update.message else update.callback_query.message
     await target.reply_text(
         "🛠️ *Модерация отзывов:*",
