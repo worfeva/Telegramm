@@ -600,13 +600,30 @@ async def admin_list_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE,
         await target.reply_text("📭 Пока нет отзывов для модерации.")
         return ADMIN_READING
 
+    context.user_data["admin_reviews"] = reviews
+    context.user_data["admin_page"] = page
+
+    # --- строим клавиатуру только для текущей страницы ---
+    start = page * ADMIN_PAGE_SIZE
+    end = start + ADMIN_PAGE_SIZE
+    reviews_page = reviews[start:end]
+
     keyboard = []
-    for review_id, title, rating, nickname, approved in reviews:
+    for review_id, title, rating, nickname, approved in reviews_page:
         status = "✅" if approved else "🕓"
         button_text = f"{status} {title} ({'⭐' * rating}) — {nickname}"
         keyboard.append([InlineKeyboardButton(button_text, callback_data=f"admin_read_{review_id}")])
 
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    # кнопки навигации
+    nav_buttons = []
+    if start > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data="admin_prev"))
+    if end < len(reviews):
+        nav_buttons.append(InlineKeyboardButton("Вперед ➡️", callback_data="admin_next"))
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+
+     reply_markup = InlineKeyboardMarkup(keyboard)
     target = update.message if update.message else update.callback_query.message
     await target.reply_text(
         "🛠️ *Модерация отзывов:*",
@@ -616,6 +633,21 @@ async def admin_list_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE,
     return ADMIN_READING
 
     # === Просмотр отзыва ===
+async def admin_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    reviews = context.user_data.get("admin_reviews", [])
+    page = context.user_data.get("admin_page", 0)
+
+    if query.data == "admin_next":
+        page += 1
+    elif query.data == "admin_prev":
+        page -= 1
+
+    context.user_data["admin_page"] = page
+    await admin_list_reviews(update, context, page=page)
+
 async def admin_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -763,10 +795,11 @@ admin_review_conv = ConversationHandler(
     states={
         ADMIN_READING: [
             CallbackQueryHandler(admin_read_review, pattern=r"^admin_read_\d+$"),
-            CallbackQueryHandler(admin_approve_review, pattern=r"^admin_approve_\d+$"),  # одобрить
-            CallbackQueryHandler(admin_delete_review, pattern=r"^admin_delete_\d+$"),    # удалить
+            CallbackQueryHandler(admin_approve_review, pattern=r"^admin_approve_\d+$"),
+            CallbackQueryHandler(admin_delete_review, pattern=r"^admin_delete_\d+$"),
             CallbackQueryHandler(admin_edit_review, pattern=r"^admin_edit_\d+$"),
-            CallbackQueryHandler(admin_back, pattern="^admin_back$")
+            CallbackQueryHandler(admin_back, pattern="^admin_back$"),
+            CallbackQueryHandler(admin_navigation, pattern=r"^admin_(next|prev)$")
         ],
         ADMIN_EDITING: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_edit),
