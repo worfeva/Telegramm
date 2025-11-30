@@ -16,9 +16,9 @@ consultation_chats = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 stats_file = os.path.join(BASE_DIR, "stats.json")
 db_file = os.path.join(BASE_DIR, "logs.db")
-REVIEWS_DB_FILE = os.path.join(BASE_DIR, "reviews.db")
+REVIEWS_DB_FILE = "reviews.db"
 BACKUP_DIR = "reviews_backup"
-MAX_TEXT_LENGTH = 1000
+MAX_TEXT_LENGTH = 500
 SECRET_MODERATION_CODE = "/140013"
 STOP_WORDS = {"и", "в", "на", "с", "по", "за", "к", "для", "это", "не", "а", "о", "у"}
 TITLE, RATING, TEXT, NICKNAME, NICKNAME_CUSTOM, CONFIRM, READING = range(7)
@@ -64,7 +64,7 @@ if os.path.exists(stats_file):
         except json.JSONDecodeError:
             word_counter = {}
 
-async def log_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def log_message(update: Updateб context: ContextTypes.DEFAULT_TYPE):
     global word_counter
     if not update.message or not update.message.text:
         return
@@ -112,10 +112,8 @@ async def start(update, context):
     )
 # === Вопросы ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("reading_reviews"):
-        return
     text = update.message.text.strip().lower()
-    if text in ["отзывы", "показать отзывы", "оставить отзыв"]:
+    if not update.message or not update.message.text:
         return
 
     keywords_rf = ["Повышен","ревматоидный","фактор","РФ","положительный"] 
@@ -260,9 +258,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keywords_ty = ["спасибо", "благодарю", "реквизиты", "поддержать", "пожертвовать", "помочь"]
     if any(keyword in text for keyword in keywords_ty):
         keyboard = [
-            [InlineKeyboardButton("💳 Поддержать через YooMoney", url=payment_links["yoomoney"])],
-            [InlineKeyboardButton("💳 Поддержать через PayPal", url=payment_links["paypal"])],
-            [InlineKeyboardButton("💳 Поддержать через Сбербанк", url=payment_links["sberbank"])],
+            [InlineKeyboardButton("🇷🇺 Поддержать проект (Россия)", url=don_russia)],
+            [InlineKeyboardButton("🇪🇺 Поддержать проект (ЕС)", url=don_eu)],
         ]
         await update.message.reply_text(
             "Пожалуйста! Рад был помочь! 😊\n\n"
@@ -468,12 +465,8 @@ def delete_review_and_traces(review_id, context=None):
     except Exception:
         pass
     # === Просмотр ===
-PAGE_SIZE = 10
-READING = 1
-async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["reading_reviews"] = True
-    import sqlite3
-    conn = sqlite3.connect(REVIEWS_DB_FILE)
+async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE, message=None):
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "SELECT id, title, rating, nickname FROM reviews WHERE approved=1 ORDER BY created_at DESC"
@@ -482,75 +475,36 @@ async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     if not reviews:
-        await update.message.reply_text("Пока нет одобренных отзывов.")
-        context.user_data["reading_reviews"] = False
-        return ConversationHandler.END
-
-    context.user_data["reviews_page"] = 0
-    context.user_data["reviews_list"] = reviews  # сохраняем список для пагинации
-
-    await send_reviews_page(update, context, reviews, page=0)
-    return READING
-
-async def send_reviews_page(update, context, reviews, page=0):
-    start = page * PAGE_SIZE
-    end = start + PAGE_SIZE
-    reviews_page = reviews[start:end]
-
+        if message:
+            await message.reply_text("Пока нет одобренных отзывов.")
+        else:
+            await update.message.reply_text("Пока нет одобренных отзывов.")
+        return READING
     keyboard = [
-        [InlineKeyboardButton(
-            f"{title} ({'⭐' * rating}) — {nickname}",
-            callback_data=f"user_read_{review_id}"
-        )]
-        for review_id, title, rating, nickname in reviews_page
+        [InlineKeyboardButton(f"{title} ({'⭐' * rating}) — {nickname}", callback_data=f"user_read_{review_id}")]
+        for review_id, title, rating, nickname in reviews
     ]
-
-    nav_buttons = []
-    if start > 0:
-        nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data="reviews_prev"))
-    if end < len(reviews):
-        nav_buttons.append(InlineKeyboardButton("Вперед ➡️", callback_data="reviews_next"))
-
-    if nav_buttons:
-        keyboard.append(nav_buttons)
-
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if update.callback_query:
-        await update.callback_query.edit_message_reply_markup(reply_markup)
-        await update.callback_query.answer()
+    if message:
+        await message.reply_text("📖 Отзывы:", reply_markup=reply_markup)
     else:
         await update.message.reply_text("📖 Отзывы:", reply_markup=reply_markup)
-
-async def reviews_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    if query.data not in ("reviews_prev", "reviews_next"):
-        return
-
-    reviews = context.user_data.get("reviews_list", [])
-    page = context.user_data.get("reviews_page", 0)
-
-    if query.data == "reviews_next":
-        page += 1
-    elif query.data == "reviews_prev":
-        page -= 1
-
-    context.user_data["reviews_page"] = page
-    await send_reviews_page(update, context, reviews, page)
-
+    return READING
+    
 async def user_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     review_id = int(query.data.split("_")[-1])
 
-    conn = sqlite3.connect(REVIEWS_DB_FILE)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "SELECT title, rating, nickname, text FROM reviews WHERE id=? AND approved=1", (review_id,)
     )
-    row = cursor.fetchone()
+    review = cursor.fetchone()
     conn.close()
-    title, rating, nickname, text_r = row
+    title, rating, nickname, text_r = review
 
     keyboard = [
         [
@@ -568,24 +522,20 @@ async def user_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def user_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("↩️ Возврат в меню.")
-    context.user_data["reading_reviews"] = False
-    return ConversationHandler.END
-    
+    await read_reviews(update, context, message=query.message)
+
 read_reviews_handler = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex("(?i)^отзывы$"), read_reviews)],
     states={
         READING: [
             CallbackQueryHandler(user_read_review, pattern=r"^user_read_\d+$"),
-            CallbackQueryHandler(user_back, pattern="^user_back$"),
-            CallbackQueryHandler(reviews_navigation, pattern=r"^reviews_(next|prev)$")
+            CallbackQueryHandler(user_back, pattern="^user_back$")
         ]
     },
     fallbacks=[],
     allow_reentry=True
 )
 # === Администрирование ===
-ADMIN_PAGE_SIZE = 10
 async def admin_list_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE, from_secret: bool = False):
     if from_secret and update.effective_user.id != ADMIN_CHAT_ID:
         return
@@ -600,28 +550,12 @@ async def admin_list_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE,
         target = update.message if update.message else update.callback_query.message
         await target.reply_text("📭 Пока нет отзывов для модерации.")
         return ADMIN_READING
-    page = 0
-    context.user_data["admin_reviews"] = reviews
-    context.user_data["admin_page"] = page
-
-    start = page * ADMIN_PAGE_SIZE
-    end = start + ADMIN_PAGE_SIZE
-    reviews_page = reviews[start:end]
 
     keyboard = []
-    for review_id, title, rating, nickname, approved in reviews_page:
+    for review_id, title, rating, nickname, approved in reviews:
         status = "✅" if approved else "🕓"
         button_text = f"{status} {title} ({'⭐' * rating}) — {nickname}"
         keyboard.append([InlineKeyboardButton(button_text, callback_data=f"admin_read_{review_id}")])
-
-    # кнопки навигации
-    nav_buttons = []
-    if start > 0:
-        nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data="admin_prev"))
-    if end < len(reviews):
-        nav_buttons.append(InlineKeyboardButton("Вперед ➡️", callback_data="admin_next"))
-    if nav_buttons:
-        keyboard.append(nav_buttons)
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     target = update.message if update.message else update.callback_query.message
@@ -633,19 +567,6 @@ async def admin_list_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE,
     return ADMIN_READING
 
     # === Просмотр отзыва ===
-async def admin_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    page = context.user_data.get("admin_page", 0)
-    if query.data == "admin_next":
-        page += 1
-    elif query.data == "admin_prev":
-        page -= 1
-    context.user_data["admin_page"] = page
-
-    return await admin_list_reviews(update, context)
-
 async def admin_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -783,11 +704,6 @@ async def admin_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # === Вход по секретному коду ===
 async def secret_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("admin_started"):
-        return ADMIN_READING
-        
-    context.user_data["admin_started"] = True
-    context.user_data["admin_page"] = 0
     return await admin_list_reviews(update, context, from_secret=True)
 
 # === Регистрация хендлеров ===
@@ -798,11 +714,10 @@ admin_review_conv = ConversationHandler(
     states={
         ADMIN_READING: [
             CallbackQueryHandler(admin_read_review, pattern=r"^admin_read_\d+$"),
-            CallbackQueryHandler(admin_approve_review, pattern=r"^admin_approve_\d+$"),
-            CallbackQueryHandler(admin_delete_review, pattern=r"^admin_delete_\d+$"),
+            CallbackQueryHandler(admin_approve_review, pattern=r"^admin_approve_\d+$"),  # одобрить
+            CallbackQueryHandler(admin_delete_review, pattern=r"^admin_delete_\d+$"),    # удалить
             CallbackQueryHandler(admin_edit_review, pattern=r"^admin_edit_\d+$"),
-            CallbackQueryHandler(admin_back, pattern="^admin_back$"),
-            CallbackQueryHandler(admin_navigation, pattern="^admin_(next|prev)$")
+            CallbackQueryHandler(admin_back, pattern="^admin_back$")
         ],
         ADMIN_EDITING: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_edit),
@@ -863,8 +778,7 @@ async def review_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["review"]["rating"] = rating
 
     await query.edit_message_text(
-        f"Вы дали оценку: {rating}⭐. Благодарим Вас!\n\n<b>Введите текст отзыва</b> (не более {MAX_TEXT_LENGTH} символов):",
- 	parse_mode="HTML"
+        f"Вы дали оценку: {rating}⭐. Благодарим Вас!\n\nВведите текст отзыва (не более {MAX_TEXT_LENGTH} символов):"
     )
     return TEXT
     # === Подпись ===
@@ -982,15 +896,15 @@ logging.basicConfig(
 )
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(review_conv, group=1)
-    app.add_handler(admin_review_conv, group=2)
-    app.add_handler(read_reviews_handler, group=3)
+    app.add_handler(review_conv)
+    app.add_handler(admin_review_conv)
+    app.add_handler(read_reviews_handler)
     app.add_handler(moderation_handler)
-    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("start", handle_message))
     app.add_handler(CommandHandler("stats", stats))
-    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, log_message), group=0)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message), group=1)
+    app.add_handler(CallbackQueryHandler(button_handler))
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__": 
