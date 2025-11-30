@@ -6,7 +6,7 @@ import os
 backup_folder = backup_folder = "C:\\Users\\User\\reviews_backup"
 
 # Итоговая база
-merged_db = "reviews_merged.db"
+merged_db = "reviews.db"
 
 # Получаем список всех файлов .db в папке
 backup_files = sorted(glob.glob(os.path.join(backup_folder, "*.db")))
