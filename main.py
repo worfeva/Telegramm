@@ -599,7 +599,7 @@ async def admin_list_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE,
         target = update.message if update.message else update.callback_query.message
         await target.reply_text("📭 Пока нет отзывов для модерации.")
         return ADMIN_READING
-
+    page = 0
     context.user_data["admin_reviews"] = reviews
     context.user_data["admin_page"] = page
 
