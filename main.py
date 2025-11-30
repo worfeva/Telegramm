@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS logs (
 conn_logs.commit()
 
 word_counter = {}
-if os.path.exists():
+if os.path.exists(STATS_FILE):
     with open(STATS_FILE, "r", encoding="utf-8") as f:
         try:
             word_counter = json.load(f)
