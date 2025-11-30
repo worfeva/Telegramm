@@ -468,9 +468,11 @@ def delete_review_and_traces(review_id, context=None):
     except Exception:
         pass
     # === Просмотр ===
+PAGE_SIZE = 10
 READING = 1
 async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["conversation"] = True
+    import sqlite3
     conn = sqlite3.connect(REVIEWS_DB_FILE)
     cursor = conn.cursor()
     cursor.execute(
@@ -483,15 +485,59 @@ async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Пока нет одобренных отзывов.")
         context.user_data["conversation"] = False
         return ConversationHandler.END
+
+    context.user_data["reviews_page"] = 0
+    context.user_data["reviews_list"] = reviews  # сохраняем список для пагинации
+
+    await send_reviews_page(update, context, reviews, page=0)
+    return READING
+
+async def send_reviews_page(update, context, reviews, page=0):
+    start = page * PAGE_SIZE
+    end = start + PAGE_SIZE
+    reviews_page = reviews[start:end]
+
     keyboard = [
-        [InlineKeyboardButton(f"{title} ({'⭐' * rating}) — {nickname}", callback_data=f"user_read_{review_id}")]
-        for review_id, title, rating, nickname in reviews
+        [InlineKeyboardButton(
+            f"{title} ({'⭐' * rating}) — {nickname}",
+            callback_data=f"user_read_{review_id}"
+        )]
+        for review_id, title, rating, nickname in reviews_page
     ]
+
+    nav_buttons = []
+    if start > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data="reviews_prev"))
+    if end < len(reviews):
+        nav_buttons.append(InlineKeyboardButton("Вперед ➡️", callback_data="reviews_next"))
+
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text("📖 Отзывы:", reply_markup=reply_markup)
-    return READING
-    
+    if update.callback_query:
+        await update.callback_query.edit_message_reply_markup(reply_markup)
+        await update.callback_query.answer()
+    else:
+        await update.message.reply_text("📖 Отзывы:", reply_markup=reply_markup)
+
+async def reviews_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if query.data not in ("reviews_prev", "reviews_next"):
+        return
+
+    reviews = context.user_data.get("reviews_list", [])
+    page = context.user_data.get("reviews_page", 0)
+
+    if query.data == "reviews_next":
+        page += 1
+    elif query.data == "reviews_prev":
+        page -= 1
+
+    context.user_data["reviews_page"] = page
+    await send_reviews_page(update, context, reviews, page)
+
 async def user_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -531,7 +577,8 @@ read_reviews_handler = ConversationHandler(
     states={
         READING: [
             CallbackQueryHandler(user_read_review, pattern=r"^user_read_\d+$"),
-            CallbackQueryHandler(user_back, pattern="^user_back$")
+            CallbackQueryHandler(user_back, pattern="^user_back$"),
+            CallbackQueryHandler(reviews_navigation, pattern=r"^reviews_(next|prev)$")
         ]
     },
     fallbacks=[],
