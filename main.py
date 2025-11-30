@@ -479,7 +479,7 @@ async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     if not reviews:
-        await message.reply_text("Пока нет одобренных отзывов.")
+        await update.message.reply_text("Пока нет одобренных отзывов.")
         context.user_data["conversation"] = False
         return ConversationHandler.END
     keyboard = [
