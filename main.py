@@ -112,7 +112,7 @@ async def start(update, context):
     )
 # === Вопросы ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("conversation"):
+    if context.user_data.get("reading_reviews"):
         return
     text = update.message.text.strip().lower()
     if text in ["отзывы", "показать отзывы", "оставить отзыв"]:
@@ -471,7 +471,7 @@ def delete_review_and_traces(review_id, context=None):
 PAGE_SIZE = 10
 READING = 1
 async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["conversation"] = True
+    context.user_data["reading_reviews"] = True
     import sqlite3
     conn = sqlite3.connect(REVIEWS_DB_FILE)
     cursor = conn.cursor()
@@ -483,7 +483,7 @@ async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not reviews:
         await update.message.reply_text("Пока нет одобренных отзывов.")
-        context.user_data["conversation"] = False
+        context.user_data["reading_reviews"] = False
         return ConversationHandler.END
 
     context.user_data["reviews_page"] = 0
@@ -569,7 +569,7 @@ async def user_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text("↩️ Возврат в меню.")
-    context.user_data["conversation"] = False
+    context.user_data["reading_reviews"] = False
     return ConversationHandler.END
     
 read_reviews_handler = ConversationHandler(
