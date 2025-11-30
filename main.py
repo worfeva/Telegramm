@@ -112,8 +112,10 @@ async def start(update, context):
     )
 # === Вопросы ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("conversation"):
+        return
     text = update.message.text.strip().lower()
-    if text in ["отзывы", "показать отзывы"]:
+    if text in ["отзывы", "показать отзывы", "оставить отзыв"]:
         return
 
     keywords_rf = ["Повышен","ревматоидный","фактор","РФ","положительный"] 
@@ -467,30 +469,27 @@ def delete_review_and_traces(review_id, context=None):
     # === Просмотр ===
 READING = 1
 async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE, message=None):
+    context.user_data["conversation"] = True
     conn = sqlite3.connect(REVIEWS_DB_FILE)
     cursor = conn.cursor()
     cursor.execute(
         "SELECT id, title, rating, nickname FROM reviews WHERE approved=1 ORDER BY created_at DESC"
     )
-    rows = cursor.fetchall()
+    reviews = cursor.fetchall()
     conn.close()
 
-    if not rows:
-        if message:
-            await message.reply_text("Пока нет одобренных отзывов.")
-        else:
-            await update.message.reply_text("Пока нет одобренных отзывов.")
-        return READING
+    if not reviews:
+        await message.reply_text("Пока нет одобренных отзывов.")
+        context.user_data["conversation"] = False
+        return ConversationHandler.END
     keyboard = [
         [InlineKeyboardButton(f"{title} ({'⭐' * rating}) — {nickname}", callback_data=f"user_read_{review_id}")]
         for review_id, title, rating, nickname in reviews
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if message:
-        await message.reply_text("📖 Отзывы:", reply_markup=reply_markup)
+    await message.reply_text("📖 Отзывы:", reply_markup=reply_markup)
     else:
-        await update.message.reply_text("📖 Отзывы:", reply_markup=reply_markup)
     return READING
     
 async def user_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -505,7 +504,7 @@ async def user_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     row = cursor.fetchone()
     conn.close()
-    title, rating, nickname, text_r = review
+    title, rating, nickname, text_r = row
 
     keyboard = [
         [
@@ -523,7 +522,8 @@ async def user_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def user_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("Возврат в меню.")
+    await query.edit_message_text("↩️ Возврат в меню.")
+    context.user_data["conversation"] = False
     return ConversationHandler.END
     
 read_reviews_handler = ConversationHandler(
@@ -899,9 +899,9 @@ logging.basicConfig(
 )
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(review_conv)
-    app.add_handler(admin_review_conv)
-    app.add_handler(read_reviews_handler)
+    app.add_handler(review_conv, group=1)
+    app.add_handler(admin_review_conv, group=2)
+    app.add_handler(read_reviews_handler, group=3)
     app.add_handler(moderation_handler)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats))
