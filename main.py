@@ -489,7 +489,6 @@ async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE, messa
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await message.reply_text("📖 Отзывы:", reply_markup=reply_markup)
-    else:
     return READING
     
 async def user_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
