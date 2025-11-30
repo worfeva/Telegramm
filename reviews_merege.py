@@ -1,21 +1,23 @@
 import sqlite3
 import glob
 import os
+from datetime import datetime
 
-# === Настройки ===
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # директория с ботом
-backup_folder = "C:\\Users\\User\\reviews_backup"
-final_db = os.path.join(BASE_DIR, "reviews.db")  # итоговая база
+# Путь к папке с бэкапами
+backup_folder = "reviews_backup"  # в том же каталоге, что и бот
+
+# Путь к рабочей базе бота
+main_db = "reviews.db"
 
 # Получаем список всех файлов .db в папке
 backup_files = sorted(glob.glob(os.path.join(backup_folder, "*.db")))
 
-# Создаём/открываем итоговую базу
-conn_merged = sqlite3.connect(final_db)
-cursor_merged = conn_merged.cursor()
+# Открываем рабочую базу бота
+conn_main = sqlite3.connect(main_db)
+cursor_main = conn_main.cursor()
 
-# Создаём таблицу, если её нет
-cursor_merged.execute("""
+# Создаём таблицу, если вдруг её нет
+cursor_main.execute("""
 CREATE TABLE IF NOT EXISTS reviews (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
@@ -29,36 +31,30 @@ CREATE TABLE IF NOT EXISTS reviews (
     admin_message_id INTEGER DEFAULT NULL
 )
 """)
-conn_merged.commit()
+conn_main.commit()
 
-# Объединяем все бэкапы
-for file in backup_files:
-    print(f"Обрабатываем: {file}")
-    conn = sqlite3.connect(file)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("""
-            SELECT user_id, username, nickname, title, rating, text, approved, created_at, admin_message_id
-            FROM reviews
-        """)
-        rows = cursor.fetchall()
-    except sqlite3.OperationalError:
-        print(f"⚠️ Таблица reviews не найдена в {file}, пропускаем.")
-        conn.close()
-        continue
+# Проходим по всем бэкапам
+for backup_file in backup_files:
+    print(f"Обрабатываем: {backup_file}")
+    conn_backup = sqlite3.connect(backup_file)
+    cursor_backup = conn_backup.cursor()
+
+    cursor_backup.execute("""
+        SELECT user_id, username, nickname, title, rating, text, created_at, admin_message_id
+        FROM reviews
+    """)
+    rows = cursor_backup.fetchall()
 
     for row in rows:
-        user_id, username, nickname, title, rating, text_r, approved, created_at, admin_message_id = row
-        # Вставляем все отзывы и делаем их одобренными
-        cursor_merged.execute("""
+        # Вставляем как новые записи, approved = 1
+        cursor_main.execute("""
             INSERT INTO reviews (user_id, username, nickname, title, rating, text, approved, created_at, admin_message_id)
             VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
-        """, (user_id, username, nickname, title, rating, text_r, created_at, admin_message_id))
+        """, row)
     
-    conn.commit()
-    conn.close()
+    conn_main.commit()
+    conn_backup.close()
 
-conn_merged.commit()
-conn_merged.close()
-
-print("✅ подавись!")
+conn_main.commit()
+conn_main.close()
+print("✅ Все отзывы из бэкапов добавлены и помечены как одобренные.")
