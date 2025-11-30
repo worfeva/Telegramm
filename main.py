@@ -16,7 +16,7 @@ consultation_chats = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 stats_file = os.path.join(BASE_DIR, "stats.json")
 db_file = os.path.join(BASE_DIR, "logs.db")
-REVIEWS_DB_FILE = "reviews.db"
+REVIEWS_DB_FILE = os.path.join(BASE_DIR, "reviews.db")
 BACKUP_DIR = "reviews_backup"
 MAX_TEXT_LENGTH = 1000
 SECRET_MODERATION_CODE = "/140013"
@@ -113,7 +113,7 @@ async def start(update, context):
 # === Вопросы ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip().lower()
-    if not update.message or not update.message.text:
+    if text in ["отзывы", "показать отзывы"]:
         return
 
     keywords_rf = ["Повышен","ревматоидный","фактор","РФ","положительный"] 
@@ -465,16 +465,17 @@ def delete_review_and_traces(review_id, context=None):
     except Exception:
         pass
     # === Просмотр ===
+READING = 1
 async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE, message=None):
-    conn = get_conn()
+    conn = sqlite3.connect(REVIEWS_DB_FILE)
     cursor = conn.cursor()
     cursor.execute(
         "SELECT id, title, rating, nickname FROM reviews WHERE approved=1 ORDER BY created_at DESC"
     )
-    reviews = cursor.fetchall()
+    rows = cursor.fetchall()
     conn.close()
 
-    if not reviews:
+    if not rows:
         if message:
             await message.reply_text("Пока нет одобренных отзывов.")
         else:
@@ -497,12 +498,12 @@ async def user_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     review_id = int(query.data.split("_")[-1])
 
-    conn = get_conn()
+    conn = sqlite3.connect(REVIEWS_DB_FILE)
     cursor = conn.cursor()
     cursor.execute(
         "SELECT title, rating, nickname, text FROM reviews WHERE id=? AND approved=1", (review_id,)
     )
-    review = cursor.fetchone()
+    row = cursor.fetchone()
     conn.close()
     title, rating, nickname, text_r = review
 
@@ -522,8 +523,9 @@ async def user_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def user_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await read_reviews(update, context, message=query.message)
-
+    await query.edit_message_text("Возврат в меню.")
+    return ConversationHandler.END
+    
 read_reviews_handler = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex("(?i)^отзывы$"), read_reviews)],
     states={
