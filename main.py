@@ -898,6 +898,12 @@ async def review_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )   
     else:
         await query.edit_message_text("❌ Отзыв отменён.")
+    
+    async def cancel_review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("❌ Процесс оставления отзыва отменён.")
+    
     context.user_data.pop("in_review", None)
     context.user_data.pop("review", None)
     return ConversationHandler.END
@@ -906,12 +912,29 @@ async def review_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
 review_conv = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex(r"(?i)^оставить отзыв$"), start_review)],
     states={
-        TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, review_title)],
-        RATING: [CallbackQueryHandler(review_rating, pattern=r"^rate_\d+$")],
-        TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, review_text)],
-        NICKNAME: [CallbackQueryHandler(review_nickname, pattern="^nick_")],
-        NICKNAME_CUSTOM: [MessageHandler(filters.TEXT & ~filters.COMMAND, review_nickname_custom)],
-        CONFIRM: [CallbackQueryHandler(review_final, pattern="^(send_review|cancel_review)$")],
+        TITLE: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, review_title),
+            CallbackQueryHandler(cancel_review_callback, pattern="^cancel_review$")
+        ],
+        RATING: [
+            CallbackQueryHandler(review_rating, pattern=r"^rate_\d+$"),
+            CallbackQueryHandler(cancel_review_callback, pattern="^cancel_review$")
+        ],
+        TEXT: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, review_text),
+            CallbackQueryHandler(cancel_review_callback, pattern="^cancel_review$")
+        ],
+        NICKNAME: [
+            CallbackQueryHandler(review_nickname, pattern="^nick_"),
+            CallbackQueryHandler(cancel_review_callback, pattern="^cancel_review$")
+        ],
+        NICKNAME_CUSTOM: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, review_nickname_custom),
+            CallbackQueryHandler(cancel_review_callback, pattern="^cancel_review$")
+        ],
+        CONFIRM: [
+            CallbackQueryHandler(review_final, pattern="^(send_review|cancel_review)$")
+        ],
     },
     fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
     allow_reentry=True
