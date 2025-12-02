@@ -263,7 +263,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keywords_ty = ["спасибо", "благодарю", "реквизиты", "поддержать", "пожертвовать", "помочь"]
     if any(keyword in text for keyword in keywords_ty):
-       keyboard = [
+        keyboard = [
             [InlineKeyboardButton("💳 ЮMoney / Российские платёжные системы", callback_data="yoomoney")],
             [InlineKeyboardButton("💳 PayPal / ЕС", callback_data="paypal")],
             [InlineKeyboardButton("💳 Прямой перевод через Сбербанк", callback_data="sberbank")]
@@ -276,7 +276,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
-
     keywords_con = ["связаться", "доктором", "консультация"]
     if any(keyword in text for keyword in keywords_con):
         keyboard = [
