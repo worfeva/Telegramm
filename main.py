@@ -45,7 +45,7 @@ THANK_YOU_TEXT = (
     "Теперь Вы можете связаться с доктором по ссылке ниже. Пожалуйста, в первом сообщении подробно изложите Ваш анамнез, сопутствующие заболевания и принимаемые медикаменты (дозировки в милиграммах). Консультант ответит Вам в ближайшее время."
 )
 # === Сбор статистики ===    
-conn_logs = sqlite3.connect("db_file", check_same_thread=False)
+conn_logs = sqlite3.connect(db_file, check_same_thread=False)
 cursor_logs = conn_logs.cursor()
 cursor_logs.execute("""
 CREATE TABLE IF NOT EXISTS logs (
@@ -113,9 +113,14 @@ async def start(update, context):
 # === Вопросы ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip().lower()
+    text = text_raw.lower()
     if not update.message or not update.message.text:
         return
-
+    if context.user_data.get("in_review"):
+        return
+    if re.match(r'(?i)^(оставить отзыв|отзывы)$', text_raw):
+        return
+        
     keywords_rf = ["Повышен","ревматоидный","фактор","РФ","положительный"] 
     if any(keyword.lower() in text for keyword in keywords_rf):
         await update.message.reply_text(
@@ -257,9 +262,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keywords_ty = ["спасибо", "благодарю", "реквизиты", "поддержать", "пожертвовать", "помочь"]
     if any(keyword in text for keyword in keywords_ty):
-        keyboard = [
-            [InlineKeyboardButton("🇷🇺 Поддержать проект (Россия)", url=don_russia)],
-            [InlineKeyboardButton("🇪🇺 Поддержать проект (ЕС)", url=don_eu)],
+       keyboard = [
+            [InlineKeyboardButton("💳 ЮMoney / Российские платёжные системы", callback_data="yoomoney")],
+            [InlineKeyboardButton("💳 PayPal / ЕС", callback_data="paypal")],
+            [InlineKeyboardButton("💳 Прямой перевод через Сбербанк", callback_data="sberbank")]
         ]
         await update.message.reply_text(
             "Пожалуйста! Рад был помочь! 😊\n\n"
@@ -274,7 +280,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if any(keyword in text for keyword in keywords_con):
         keyboard = [
             [InlineKeyboardButton("Юз Андрей Анатольевич", callback_data="consult_andrey")],
-            [InlineKeyboardButton("Казанов Валентин Александрович",  callback_data="consult_andrey")],
+            [InlineKeyboardButton("Казанов Валентин Александрович",  callback_data="consult_valentin")],
             [InlineKeyboardButton("Отмена", callback_data="cancel")]
         ]
 
@@ -733,7 +739,7 @@ async def start_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip().lower()
     if text != "оставить отзыв":
         return
-
+    context.user_data["in_review"] = True
     user_id = update.message.from_user.id
     conn = get_conn()
     cursor = conn.cursor()
@@ -872,11 +878,16 @@ async def review_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.edit_message_text(
             "✅ Ваш отзыв отправлен на модерацию. Вы будете оповещены об одобрении отзыва. Спасибо!"
-        )
+        )   
+        context.user_data.pop("in_review", None)
+        context.user_data.pop("review", None)
         return ConversationHandler.END
     else:
         await query.edit_message_text("❌ Отзыв отменён.")
+         context.user_data.pop("in_review", None)
+        context.user_data.pop("review", None)
         return ConversationHandler.END
+        
 review_conv = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex(r"(?i)^оставить отзыв$"), start_review)],
     states={
