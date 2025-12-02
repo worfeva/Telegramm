@@ -899,7 +899,7 @@ async def review_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.edit_message_text("❌ Отзыв отменён.")
     
-    async def cancel_review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cancel_review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text("❌ Процесс оставления отзыва отменён.")
@@ -907,7 +907,6 @@ async def review_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("in_review", None)
     context.user_data.pop("review", None)
     return ConversationHandler.END
-
 
 review_conv = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex(r"(?i)^оставить отзыв$"), start_review)],
