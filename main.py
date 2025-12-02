@@ -121,7 +121,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if context.user_data.get("in_review"):
         return
-    if re.match(r'(?i)^(оставить отзыв|отзывы)$', text):
+    if re.match(r'^(оставить отзыв|отзывы)$', text):
         return
         
     keywords_rf = ["Повышен","ревматоидный","фактор","РФ","положительный"] 
@@ -480,6 +480,7 @@ async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE, messa
     cursor.execute(
         "SELECT id, title, rating, nickname FROM reviews WHERE approved=1 ORDER BY created_at DESC"
     )
+    context.user_data["in_review"] = True
     reviews = cursor.fetchall()
     conn.close()
 
@@ -887,7 +888,7 @@ async def review_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
     else:
         await query.edit_message_text("❌ Отзыв отменён.")
-         context.user_data.pop("in_review", None)
+        context.user_data.pop("in_review", None)
         context.user_data.pop("review", None)
         return ConversationHandler.END
         
