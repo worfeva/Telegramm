@@ -668,7 +668,7 @@ async def admin_edit_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title, text_r = cursor.fetchone()
     conn.close()
 
-    context.data["edit_review_id"] = review_id
+    context.user_data["edit_review_id"] = review_id
     await query.edit_message_text(
         f"📝 *Редактирование отзыва* **{title}**:\n\n"
         f"Текущий текст:\n{text_r}\n\n"
@@ -686,7 +686,7 @@ async def admin_cancel_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await admin_back(update, context)
 
 async def admin_save_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    review_id = context.data.get("edit_review_id")
+    review_id = context.user_data.get("edit_review_id")
     new_text = update.message.text.strip()
 
     if not new_text:
@@ -737,7 +737,7 @@ admin_review_conv = ConversationHandler(
 # === О_Т_З_Ы_В_Ы_ ===
     # === Написание ===
 async def start_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.data["in_review"] = True
+    context.user_data["in_review"] = True
     user_id = update.message.from_user.id
     conn = get_conn()
     cursor = conn.cursor()
