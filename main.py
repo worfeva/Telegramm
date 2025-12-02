@@ -884,7 +884,18 @@ async def review_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("in_review", None)
     context.user_data.pop("review", None)
     return ConversationHandler.END
-        
+
+async def cancel_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("in_review"):
+        context.user_data.pop("in_review", None)
+        context.user_data.pop("review", None)
+        await update.message.reply_text("❌ Процесс оставления отзыва отменён.")
+    keyboard = [[InlineKeyboardButton("❌ Отменить отзыв", callback_data="cancel_review")]]
+    await update.message.reply_text(
+        "Вы начали оставление отзыва.",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
 review_conv = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex(r"(?i)^оставить отзыв$"), start_review)],
     states={
@@ -908,6 +919,7 @@ def main():
     app.add_handler(admin_review_conv)
     app.add_handler(read_reviews_handler)
     app.add_handler(moderation_handler)
+    app.add_handler(CommandHandler("cancel_review", cancel_review))
     app.add_handler(CommandHandler("start", handle_message))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, log_message), group=0)
