@@ -117,8 +117,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip().lower()
     if context.user_data.get("review") or context.user_data.get("consultant"):
         return
-    if not update.message or not update.message.text:
-        return
     if context.user_data.get("in_review"):
         return
     if re.match(r'^(оставить отзыв|отзывы)$', text):
@@ -529,7 +527,7 @@ async def user_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return READING
     
-async def user_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await read_reviews(update, context, message=query.message)
@@ -538,8 +536,8 @@ read_reviews_handler = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex("(?i)^отзывы$"), read_reviews)],
     states={
         READING: [
-            CallbackQueryHandler(user_read_review, pattern=r"^user_read_\d+$"),
-            CallbackQueryHandler(user_back, pattern="^user_back$")
+            CallbackQueryHandler(read_review, pattern=r"^read_\d+$"),
+            CallbackQueryHandler(back, pattern="^back$")
         ]
     },
     fallbacks=[],
@@ -618,16 +616,16 @@ async def admin_approve_review(update: Update, context: ContextTypes.DEFAULT_TYP
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("UPDATE reviews SET approved=1 WHERE id=?", (review_id,))
-    cursor.execute("SELECT user_id FROM reviews WHERE id=?", (review_id,))
-    user_row = cursor.fetchone()
+    cursor.execute("SELECT id FROM reviews WHERE id=?", (review_id,))
+    row = cursor.fetchone()
     conn.commit()
     conn.close()
     backup_db()
 
     # Отправляем уведомление пользователю
-    if user_row and user_row[0]:
+    if row and row[0]:
         try:
-            await context.bot.send_message(chat_id=user_row[0], text="✅ Ваш отзыв опубликован! Спасибо!")
+            await context.bot.send_message(chat_id=row[0], text="✅ Ваш отзыв опубликован! Спасибо!")
         except Exception:
             pass
 
@@ -642,17 +640,17 @@ async def admin_delete_review(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM reviews WHERE id=?", (review_id,))
-    user_row = cursor.fetchone()
+    cursor.execute("SELECT id FROM reviews WHERE id=?", (review_id,))
+    row = cursor.fetchone()
     cursor.execute("DELETE FROM reviews WHERE id=?", (review_id,))
     conn.commit()
     conn.close()
     backup_db()
 
     # Уведомляем пользователя
-    if user_row and user_row[0]:
+    if row and row[0]:
         try:
-            await context.bot.send_message(chat_id=user_row[0], text="❌ Ваш отзыв не прошёл модерацию и был удалён.")
+            await context.bot.send_message(chat_id=row[0], text="❌ Ваш отзыв не прошёл модерацию и был удалён.")
         except Exception:
             pass
 
@@ -671,7 +669,7 @@ async def admin_edit_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title, text_r = cursor.fetchone()
     conn.close()
 
-    context.user_data["edit_review_id"] = review_id
+    context.data["edit_review_id"] = review_id
     await query.edit_message_text(
         f"📝 *Редактирование отзыва* **{title}**:\n\n"
         f"Текущий текст:\n{text_r}\n\n"
@@ -689,7 +687,7 @@ async def admin_cancel_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await admin_back(update, context)
 
 async def admin_save_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    review_id = context.user_data.get("edit_review_id")
+    review_id = context.data.get("edit_review_id")
     new_text = update.message.text.strip()
 
     if not new_text:
@@ -740,14 +738,12 @@ admin_review_conv = ConversationHandler(
 # === О_Т_З_Ы_В_Ы_ ===
     # === Написание ===
 async def start_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip().lower()
-    if text != "оставить отзыв":
-        return
-    context.user_data["in_review"] = True
+    context.data["in_review"] = True
     user_id = update.message.from_user.id
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM reviews WHERE user_id=?", (user_id,))
+    text = update.message.text.strip().lower()
     if cursor.fetchone():
         conn.close()
         await update.message.reply_text("❌ Вы уже оставили отзыв.")
@@ -807,6 +803,7 @@ async def review_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("Как подписать отзыв?", reply_markup=InlineKeyboardMarkup(keyboard))
     return NICKNAME
+
 async def review_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -883,14 +880,11 @@ async def review_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             "✅ Ваш отзыв отправлен на модерацию. Вы будете оповещены об одобрении отзыва. Спасибо!"
         )   
-        context.user_data.pop("in_review", None)
-        context.user_data.pop("review", None)
-        return ConversationHandler.END
     else:
         await query.edit_message_text("❌ Отзыв отменён.")
-        context.user_data.pop("in_review", None)
-        context.user_data.pop("review", None)
-        return ConversationHandler.END
+    context.user_data.pop("in_review", None)
+    context.user_data.pop("review", None)
+    return ConversationHandler.END
         
 review_conv = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex(r"(?i)^оставить отзыв$"), start_review)],
