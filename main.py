@@ -535,7 +535,7 @@ read_reviews_handler = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex("(?i)^отзывы$"), read_reviews)],
     states={
         READING: [
-            CallbackQueryHandler(read_review, pattern=r"^read_\d+$"),
+            CallbackQueryHandler(read_reviews, pattern=r"^read_\d+$"),
             CallbackQueryHandler(back, pattern="^back$")
         ]
     },
