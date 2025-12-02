@@ -737,18 +737,20 @@ admin_review_conv = ConversationHandler(
 # === О_Т_З_Ы_В_Ы_ ===
     # === Написание ===
 async def start_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["in_review"] = True
     user_id = update.message.from_user.id
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM reviews WHERE user_id=?", (user_id,))
-    text = update.message.text.strip().lower()
     if cursor.fetchone():
         conn.close()
         await update.message.reply_text("❌ Вы уже оставили отзыв.")
         return ConversationHandler.END
     conn.close()
 
+    context.user_data["in_review"] = True
+    context.user_data["review"] = {} 
+
+    keyboard = [[InlineKeyboardButton("❌ Отменить отзыв", callback_data="cancel_review")]]
     await update.message.reply_text(
         f"👋 Добро пожаловать в систему отзывов об оказанных консультациях!\n\n"
         f"❗️ Правила оставления отзывов:\n"
@@ -756,7 +758,8 @@ async def start_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f" Один отзыв с аккаунта\n"
         f"✍ Максимальная длина — {MAX_TEXT_LENGTH} символов\n"
         f"🔍 Пожалуйста, воздержитесь от нелитературных выражений. Все отзывы проходят модерацию\n\n"
-        "👉 Введите заголовок вашего отзыва:"
+        "👉 Введите заголовок вашего отзыва:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
     return TITLE
     # === Заголовок ===
@@ -766,15 +769,29 @@ async def review_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Поле не может быть пустым. Введите снова:")
         return TITLE
 
-    context.user_data["review"] = {
-        "title": title,
-        "user_id": update.message.from_user.id,
-        "username": f"@{update.message.from_user.username}" if update.message.from_user.username else "Anonymous"
-    }
+    context.user_data["review"]["title"] = title
+    context.user_data["review"]["user_id"] = update.message.from_user.id
+    context.user_data["review"]["username"] = (
+        f"@{update.message.from_user.username}" if update.message.from_user.username else "Anonymous"
+    )
 
     keyboard = [[InlineKeyboardButton(f"{i}⭐", callback_data=f"rate_{i}") for i in range(1, 6)]]
-    await update.message.reply_text("Дайте Вашу оценку консультации по шкале от 1–5:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(
+        "Дайте Вашу оценку консультации по шкале от 1–5:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
     return RATING
+    # === Отмена ===
+async def cancel_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("in_review"):
+        context.user_data.pop("in_review", None)
+        context.user_data.pop("review", None)
+        await update.message.reply_text("❌ Процесс оставления отзыва отменён.")
+    keyboard = [[InlineKeyboardButton("❌ Отменить отзыв", callback_data="cancel_review")]]
+    await update.message.reply_text(
+        "Вы начали оставление отзыва.",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
     # === Оценка ===
 async def review_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -885,16 +902,6 @@ async def review_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("review", None)
     return ConversationHandler.END
 
-async def cancel_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("in_review"):
-        context.user_data.pop("in_review", None)
-        context.user_data.pop("review", None)
-        await update.message.reply_text("❌ Процесс оставления отзыва отменён.")
-    keyboard = [[InlineKeyboardButton("❌ Отменить отзыв", callback_data="cancel_review")]]
-    await update.message.reply_text(
-        "Вы начали оставление отзыва.",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
 
 review_conv = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex(r"(?i)^оставить отзыв$"), start_review)],
