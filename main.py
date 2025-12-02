@@ -112,13 +112,16 @@ async def start(update, context):
     )
 # === Вопросы ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
     text = update.message.text.strip().lower()
-    text = text_raw.lower()
+    if context.user_data.get("review") or context.user_data.get("consultant"):
+        return
     if not update.message or not update.message.text:
         return
     if context.user_data.get("in_review"):
         return
-    if re.match(r'(?i)^(оставить отзыв|отзывы)$', text_raw):
+    if re.match(r'(?i)^(оставить отзыв|отзывы)$', text):
         return
         
     keywords_rf = ["Повышен","ревматоидный","фактор","РФ","положительный"] 
