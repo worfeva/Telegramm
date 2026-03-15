@@ -131,7 +131,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("💳 ЮMoney / Российские платёжные системы", callback_data="yoomoney")],
             [InlineKeyboardButton("💳 PayPal / ЕС", callback_data="paypal")],
             [InlineKeyboardButton("💳 Прямой перевод через Сбербанк", callback_data="sberbank")],
-	    [InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel")],
+	    [InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
         ]
         await update.message.reply_text(
             "Пожалуйста! Рад был помочь! 😊\n\n"
@@ -147,7 +147,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton("Юз Андрей Анатольевич", callback_data="consult_andrey")],
             [InlineKeyboardButton("Казанов Валентин Александрович",  callback_data="consult_valentin")],
-            [InlineKeyboardButton("Отмена", callback_data="cancel")],
+            [InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
         ]
 
         await update.message.reply_text(
@@ -200,7 +200,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         keyboard = [
             [InlineKeyboardButton("Подвердить", callback_data="start_payment")],
-            [InlineKeyboardButton("Отмена", callback_data="cancel")],
+            [InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
         ]
         await context.bot.send_message(
             chat_id=user.id,
@@ -213,7 +213,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("💳 ЮMoney / Российские платёжные системы", callback_data="yoomoney")],
             [InlineKeyboardButton("💳 PayPal / ЕС", callback_data="paypal")],
             [InlineKeyboardButton("💳 Прямой перевод через Сбербанк", callback_data="sberbank")],
-	    [InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel")],
+	    [InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
         ]
         await context.bot.send_message(
             chat_id=user.id,
@@ -227,7 +227,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("💳 Оплатить консультацию", url=payment_link)],
                 [InlineKeyboardButton("✅ Я оплатил", callback_data="confirm_sber")],
                 [InlineKeyboardButton("↩️ Назад", callback_data="start_payment")],
-		[InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel")],
             ]
 
         method_names = {
@@ -255,7 +254,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(
                 f"Связаться с доктором {consultant['name']}",
                 url=f"https://t.me/{consultant['username'].lstrip('@')}")],
-	    [InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel")],
+	    [InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
         ]
         await context.bot.send_message(
             chat_id=user.id,
@@ -647,7 +646,7 @@ async def review_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
 	[InlineKeyboardButton(f"{i}⭐", callback_data=f"rate_{i}") for i in range(1, 6)],
-	[InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel")],
+	[InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
     ]
     await update.message.reply_text("Дайте Вашу оценку консультации по шкале от 1–5:", reply_markup=InlineKeyboardMarkup(keyboard))
     return RATING
@@ -674,7 +673,7 @@ async def review_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("Использовать ник Telegram", callback_data="nick_username")],
         [InlineKeyboardButton("Использовать псевдоним", callback_data="nick_custom")],
-	[InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel")],
+	[InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
     ]
     await update.message.reply_text("Как подписать отзыв?", reply_markup=InlineKeyboardMarkup(keyboard))
     return NICKNAME
