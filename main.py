@@ -366,7 +366,7 @@ async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE, messa
             await update.message.reply_text("Пока нет одобренных отзывов.")
         return READING
     keyboard = []
-    for review_id, title, rating, nickname in reviews
+    for review_id, title, rating, nickname in reviews:
 	keyboard.append([
 	    InlineKeyboardButton(f"{title} ({'⭐' * rating}) — {nickname}", callback_data=f"user_read_{review_id}"),
 	    InlineKeyboardButton("❌ Отмена", callback_data="cancel")
