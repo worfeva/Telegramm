@@ -18,7 +18,7 @@ stats_file = os.path.join(BASE_DIR, "stats.json")
 db_file = os.path.join(BASE_DIR, "logs.db")
 REVIEWS_DB_FILE = "reviews.db"
 BACKUP_DIR = "reviews_backup"
-MAX_TEXT_LENGTH = 500
+MAX_TEXT_LENGTH = 2000
 SECRET_MODERATION_CODE = "/140013"
 STOP_WORDS = {"и", "в", "на", "с", "по", "за", "к", "для", "это", "не", "а", "о", "у"}
 TITLE, RATING, TEXT, NICKNAME, NICKNAME_CUSTOM, CONFIRM, READING = range(7)
@@ -84,8 +84,30 @@ async def log_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with open(stats_file, "w", encoding="utf-8") as f:
         json.dump(word_counter, f, ensure_ascii=False, indent=2)
 
+async def daily_heartbeat_task(bot: Bot, chat_id: int, hour=8, minute=30):
+    sent_today = False
+    while True:
+        try:
+            now = datetime.now()
+            if now.hour == hour and now.minute == minute and not sent_today:
+                await bot.send_message(chat_id=chat_id, text="✅ Бот работает нормально.")
+                sent_today = True
+            elif now.hour != hour or now.minute != minute:
+                sent_today = False
+        except Exception as e:
+            print(f"Heartbeat error: {e}")
+        await asyncio.sleep(30)
+
 # === Обработчик команд ==
-    # === /stats ===
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        await update.message.reply_text("❌ Диалог отменён.")
+    elif update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text("❌ Диалог отменён.")
+    return ConversationHandler.END
+    
+	# === /stats ===
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor_logs.execute("SELECT message FROM logs")
     all_messages = cursor_logs.fetchall()
@@ -112,153 +134,8 @@ async def start(update, context):
     )
 # === Вопросы ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text:
-        return
     text = update.message.text.strip().lower()
-    if context.user_data.get("review") or context.user_data.get("consultant"):
-        return
-    if context.user_data.get("in_review"):
-        return
-    if re.match(r'^(оставить отзыв|отзывы)$', text):
-        return
-        
-    keywords_rf = ["Повышен","ревматоидный","фактор","РФ","положительный"] 
-    if any(keyword.lower() in text for keyword in keywords_rf):
-        await update.message.reply_text(
-            "🧪 Повышенные лабораторные показатели без симптомов — это НЕ диагноз.\n\n"
-                "Многие люди могут иметь положительный ревматоидный фактор (РФ) или антинуклеарные, не имея ревматологического заболевания.\n\n"
-            "✅ Если вы:\n"
-            "— не ощущаете болей, утренней скованности более 30 мин\n"
-            "— не отмечаете появления отёков суставов, слабости, потери аппетита/веса\n"
-            "— у Вас отсутствует значимое повышение маркеров воспаления в анализах (СРБ, СОЭ, фибриноген)\n\n"
-            "🔹 то само по себе отклонение не требует лечения или срочного обращения к ревматологу.\n"
-            "🔹 Также не стоит забывать, что в клинической диагностике при выявлении ревматоидного фактора имеет значение только фракция IgM.\n"
-            "🔹 Ревматоидный фактор повышен у 5–12% здоровых людей в зависимости от возраста и не играет предсказательной роли в развитии аутоиммунных заболеваний.\n\n"
-            "👍 Если Вы нашли ответ, введите «Спасибо!»\n"
-            "📬 Если остались вопросы — «Связаться с доктором», и мы постараемся Вам помочь."
-            )
-        return
-
-    keywords_anf = ["АНФ","повышен","положительный","антинуклеарный","ana"]
-    if any(keyword.lower() in text for keyword in keywords_anf):
-        await update.message.reply_text( 
-            "🧪 Повышенные лабораторные показатели без симптомов — это НЕ диагноз\n\n"
-            "☝️Примерно у 15–30% людей ANA могут быть положительными в низких титрах (ниже 1:640), без каких-либо симптомов коллагеноза, и они никогда не заболеют волчанкой.\n\n"
-            "☝️Также повышением АНФ может сопровождаться любое инфекционное заболевание или другое аутоиммунное заболевание не ревматологической природы (к примеру, атопический дерматит)\n\n"
-            "🩺 Диагноз системной красной волчанки (СКВ) ставится по клиническим критериям, к которым относятся:\n\n"
-            "✅характерные симптомы:\n" 
-            "— дискоидная волчанка, сопровождающаяся появлением сыпи (типично — “бабочка” на лице, или появление пузырьков на теле, похожих на герпес), которая очень сильно беспокоит в связи с постоянным жжением и зудом, а так же имеет отчётливую фоточувствительность,\n" 
-            "— гнёздная аллопеция\n" 
-            "— постоянное появление новых язв во рту или носу,\n" 
-            "— боль и отёчность мелких или крупных суставов,\n" 
-            "— стойкая лихорадка (температура выше 38°C) без признаков инфекции,\n" 
-            "— изменения крови (анемия, низкие тромбоциты, лейкопения),\n" 
-            "— отёки лица и нижних конечностей в сочетании с набором веса\n"
-            "🧪 Изменения анализов крови с:\n\n" 
-            "- высоким титром АНФ (обычно ≥1:640) + выявлением специфических антитела в иммуноблоте ENA: антитела к двуспиральной ДНК и/или Sm-антиген\n"
-            "- в случае поражения почек- появление белка в моче свыше 300 миллиграммов в сутки\n"
-            "📌 Если ничего из перечисленных симптомов нет, а ANA выявлены “на всякий случай” — это не повод для паники, лечения или даже направления к ревматологу.\n" 
-            "📆 Можно пересдать анализ через 2-3 месяца для самоуспокоения или просто наблюдать за состоянием.\n" 
-            "👍 Если Вы нашли ответ на свой вопрос, введите команду \"Спасибо!\"\n"
-            "📬 Если у Вас остались вопросы, введите «Связаться с доктором», и мы постараемся Вам помочь.\n" 
-            )
-        return
-
-    keywords_mk = ["Повышена","мочевая","кислота","высокая",]
-    if any(keyword.lower() in text for keyword in keywords_mk):
-        await update.message.reply_text(
-            "🧪Повышение уровня мочевой кислоты свидетельствует о нарушении обмена этого химического соединения в крови. Однако само по себе повышение не обязательно приводит к развитию подагры.🧪Повышение уровня мочевой кислоты свидетельствует о нарушении обмена этого химического соединения в крови. Однако само по себе повышение не обязательно приводит к развитию подагры.\n"
-            "✅ Важный момент:\n\n"
-            "Подагра возникает не в следствие повышение мочевой кислоты, а в следствие дефекта в работе фермента ксантиноксидазы, которая ответственна за выведение мочевой кислоты из тканей. Для примера, у пациентов на гемодиализе часто мочевая кислоты превышает норму в десятки раз, при этом характерных симптомов они не испытывают.\n"
-            "✅ Если вы:\n"
-            "— никогда не испытывали приступов подагры с резко развившимся отёком, покраснением и интенсивными болями в одном из суставов тела, как правило суставе основания большого пальца ноги\n"
-            "— не сталкивались с появлением плотных беловатых бугорков внутри кожных покровов, расположенных, как правило, суставах\n"
-            "— не имеете признаков системного воспаления по общим анализам\n"
-            "— не сталкивались с появлением плотных беловатых бугорков внутри кожных покровов, расположенных, как правило, суставах\n"
-            "— не имеете признаков системного воспаления по общим анализам\n"
-            "🔹 то само по себе отклонение лабораторного показателя не требует медикаментозной коррекции, если значения не превышает 9 мг/дл у женщин и 10 мг/дл у мужчин.\n"
-            "🔹Тем не менее, следует ограничить содержание пуриновых оснований в пище и отказаться от употребления алкоголя.\n" 
-            "⚠️Помните, что за повышением мочевой кислоты, даже без симптомов, может стоять начало развития метаболического синдрома с куда более серьёзным последствиями для внутренних органов.\n" 
-            "👍Если Вы нашли ответ на свой вопрос, введите команду \"Спасибо!\"\n" 
-            "📬 Если в Вашем случае повышение мочевой кислоты сопровождается симптомами, введите «Связаться с доктором», и мы постараемся вам помочь.\n" 
-    )    
-        return
-
-    keywords_but = ["сыпь","бабочка","в форме бабочки","на лице","дискоидная волчанка"]
-    if any(keyword.lower() in text for keyword in keywords_but):
-        await update.message.reply_text(
-            "😳Сыпь в форме бабочки на лице не обязательно означает наличие системной красной волчанки.\n"
-            "Если говорить о ревматологических заболеваниях, то такая сыпь характерна для дискоидной волчанки. Это не синоним системной красной волчанки, хотя может быть одним из её симптомов.\n" 
-            "☝️В этом случае сыпь:\n\n"
-            "- помимо визуального причиняет существенный физический дискомфорт, поскольку вызывает боли и жжение\n"
-            "- сопровождается появлением шелушения, как при псориазе, или появлением волдырей на подобие герпеса, которые оставляют после себя рубцы\n"
-            "- имеет чёткую связь с фотосенсибилизацией\n"
-            "Чаще всего сыпь связана с другим заболеванием, которое называется розацеа.\n" 
-            "🔎Для дифференцировки сыпь следует обратиться к дерматологу. Если диагноз дискоидной волчанки подтвердится следует обратиться к ревматологу или повторно написать нам.\n"
-            "👍Если Вы нашли ответ на свой вопрос, введите команду \"Спасибо!\"\n"
-            "📬 Если у Вас остались вопросы, введите «Связаться с доктором», и мы постараемся Вам помочь.\n" 
-    )    
-        return
-
-    keywords_vas = ["сыпь на теле","васкулит","кожный","петехии","петехиальная"]
-    if any(keyword.lower() in text for keyword in keywords_vas):
-        await update.message.reply_text(
-            "🤓Васкулит - это воспаление сосудов, которое запускается каким-либо провоцирующим фактором, будь то попадание в организм аллергена или укус насекомого с появлением характерной папулыю.\n"
-            "В подавляющем большинстве случаев, если Вы слышите диагноз «Васкулит» - речь идёт о безобидном кожном заболевании, лечением которого занимаются дерматологи.\n"
-            "🩺Ревматология занимается лечением системных васкулитов. В этом случае воспалительный каскад активируется антителами, что приводит к генерализованному воспалению сосудов по всему организму, и, в первую очередь органов, обильно васкуляризированных: лёгкие, почки, кишечник и кожа.\n"
-            "В отличие от сугубо кожных форм васкулитов, системные имеют обширную яркую клиническую картину с появлением системной воспалительной реакции в крови и множества других симптомов. Что интересно, сыпь появляется на довольно поздних стадиях заболевания и очень обширная.\n" 
-            "🔎Если Вы у себя, или у ребёнка, нашли пару красных точек, которые без лупы разглядеть невозможно - это гарантированно не системный васкулит и дальнейшая диагностика не требуется. Вы можете также обратиться к дерматологу для верификации сыпи\n" 
-            "📬Если же Вам поставлен диагноз «Системный васкулит» или помимо сыпи имеют место другие подозрительные симптомы, введите «Связаться с доктором», и мы постараемся Вам помочь.\n" 
-            "👍Если Вы нашли ответ на свой вопрос, введите команду \"Спасибо!\"\n" 
-    )    
-        return
-
-    keywords_jia = ["юра","юиа","у детей","ювинильный","артрит"]
-    if any(keyword.lower() in text for keyword in keywords_jia):
-        await update.message.reply_text(
-            "👦🏻 Ювенильный идеопатический артрит (ЮИА) - это хроническое воспалительное заболевание суставов, которое развивается у детей и подростков в возрасте до 16 лет. По статистике - это самое частое после реактивного артрита ревматологическое заболевание у детей.\n\n"
-            "👦🏾 У заболевания существует несколько форм течения:\n\n"
-            "🔹 ювенильный идеопатический олигоартрит (поражение менее 4 суставов)\n"
-            "🔹 РФ-отрицательный ювенильный полиартрит (поражение 5 и более суставов)\n"
-            "🔹 РФ-положительный ювенильный полиартрит\n"
-            "🔹 системный ювенильный идеопатический артрит - болезнь Стилла\n"
-            "🔹 ювенильный псориатический артрит\n"
-            "🔹 артрит, ассоциированный с энтезитами - по сути, это манифестация болезни Бехтерева в детском возрасте.\n\n"
-            "😨 Чаще всего родители обращаются с подозрением именно на первый вариант. Как и у любого другого ревматологического заболевание, здесь существует ряд критериев поставновки диагноза:\n"
-            "✅ Сохранение жалоб более 6 недель. И это самый важный диагностический критерий. Невозможно поставить диагноз ЮрА ребёнку, у которого в течение недели переодический беспокоит боль и отёчность в однои даже нескольких суставах\n"
-            "✅ Начало заболевания до 18-ти летнего возраста\n"
-            "✅ Исключение других заболеваний, протекающих с суставным синдромом\n\n"
-            "Для каждой из форм течения есть и свои отдельные критерии диагностики.\n\n"
-            "🧪 У заболевания не существует лабораторных маркеров. Даже положительный АНФ не является доказательтством диагноза. При доказанном ЮИА - это фактор риска развития увеита, но не правило.\n\n"
-            "🤱 Для родителей самое важное понимать, что не каждый артрит у ребёнка означает автоматически ЮИА. В подавляющем большинстве случаев это просто реактивный артрит, который проходит самостоятельно. Даже если у ребёнка выявлен ЮИА, терапия первой линии - это всегда НПВС по необходимости. Зачастую такой терапии достаточно для контроля заболевания\n\n"
-            "⚠️Самая частая ошибка родителей - это восприятие наблюдения и лечения НПВС при слабой клинической картине, как потери времени. На самом деле, это просто отсутствие необходимости в более агрессивной терапии на данном этапе. Здесь следует вспомнить слова великого русского терапевта Сергея Павловича Боткина: «Лечи больного а не болезнь!». Если ребёнок активен, не имеет ограничения функции суставов в виде хроматы или контрактуры, не жалуется на упорные боли, а в случае их появления ему помогают НПВС, то нет повода для паники и агрессивной терапии. В этом случае динамическое наблюдение - это и правда лучшее, что Вы можете сделать для ребёнка\n\n"
-            "Метотрексат и другие иммуносупрессанты назначают только при яркой клинической картине, выраженном системном воспалении и поражении глаз (увеит). Ни наличие визуальной отчёности, ни результат УЗИ-обследования не являются показанием к эскалации медикаментозной терапии\n\n"
-            "👍 Если Вы нашли ответ на свой вопрос, введите команду «Спасибо!»\n\n"
-            "📬 Если у Вас остались вопросы, введите «Связаться с доктором», и мы постараемся Вам помочь."
-        )
-        return
-
-    keywords_sj = ["сухость","глаз","рта","шегрен","синдром шегрена"]
-    if any(keyword.lower() in text for keyword in keywords_sj):
-        await update.message.reply_text(
-        "🌵 Сухость глаз или рта не являются специфичными для синдрома Шегрена признаками.\n\n"
-        "Одна из самых частых причин сухости глаз - дефицит витамина А. Если у Вас в дополнение к сухости глаза отмечается снижение адаптации к темноте - скорее всего причина именно в этом.\n\n"
-        "Также сухость глаза могут вызывать:\n\n"
-        "— экраны, кондиционеры, линзы\n"
-        "— лекарственные препараты (антидепрессанты, антигистаминные, бета-блокаторы и др.)\n"
-        "— возрастные изменения\n"
-        "— гормональный дисбаланс\n\n"
-    "Диагноз «Синдром Шегрена» ставится на основании следующих признаков:\n\n"
-    "✅объективно доказанная сухость слизистых оболочек. С этой целью выполняется тест Ширмера для оценки слёзопродукции, а так же тест Сакстона, который можно выполнить в домашних условиях при помощи кухонных весов и марлиевой салфетки. За каждый из признаков даётся по одному пункту\n"
-    "✅выявление антител к SSA (Ro) и/или SSB (La) в сочетании с высоким титром АНФ (3 пунтка)\n"
-    "✅наличие в биопсии слюнной железы очага лейкоцитарной инфильтрации (3 пунтка)\n\n"
-    "При сумме пунктов от 4 и выше диагноз «Синдром Шегрена» ставится с высокой степенью достоверности.\n\n"
-    "❗️Обратите внимание, что синдром Шегрена может быть сеорнегативным, то есть без появления антител к SSA и/или SSB, но при этом необходимо наличие двух других признаков.\n\n"
-    "Очень часто симптоматикой сухости проявляют себя психосоматические расстройства, которые могут быть вызваны стрессом, депрессией, тревожностью, а так же неврологическими заболеваниями.\n\n"
-    "Резюмируя всё вышесказанное: субъективное ощущение сухости глаз или рта не является поводом для постановки диагноза «Синдром Шегрена» и сдачи дорогостоящих анализов. Симптоматику следует сначала объективировать, а затем уже принимать решение о дальнейших действиях.\n\n"
-    "👍Если Вы нашли ответ на свой вопрос, введите команду «Спасибо!»\n\n"
-    "📬 Если у Вас остались вопросы, введите «Связаться с доктором», и мы постараемся Вам помочь."
-            )
+    if not update.message or not update.message.text:
         return
 
     keywords_ty = ["спасибо", "благодарю", "реквизиты", "поддержать", "пожертвовать", "помочь"]
@@ -266,7 +143,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton("💳 ЮMoney / Российские платёжные системы", callback_data="yoomoney")],
             [InlineKeyboardButton("💳 PayPal / ЕС", callback_data="paypal")],
-            [InlineKeyboardButton("💳 Прямой перевод через Сбербанк", callback_data="sberbank")]
+            [InlineKeyboardButton("💳 Прямой перевод через Сбербанк", callback_data="sberbank")],
+	    [InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel")],
         ]
         await update.message.reply_text(
             "Пожалуйста! Рад был помочь! 😊\n\n"
@@ -276,12 +154,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
+
     keywords_con = ["связаться", "доктором", "консультация"]
     if any(keyword in text for keyword in keywords_con):
         keyboard = [
             [InlineKeyboardButton("Юз Андрей Анатольевич", callback_data="consult_andrey")],
             [InlineKeyboardButton("Казанов Валентин Александрович",  callback_data="consult_valentin")],
-            [InlineKeyboardButton("Отмена", callback_data="cancel")]
+            [InlineKeyboardButton("Отмена", callback_data="cancel")],
         ]
 
         await update.message.reply_text(
@@ -334,7 +213,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         keyboard = [
             [InlineKeyboardButton("Подвердить", callback_data="start_payment")],
-            [InlineKeyboardButton("Отмена", callback_data="cancel")]
+            [InlineKeyboardButton("Отмена", callback_data="cancel")],
         ]
         await context.bot.send_message(
             chat_id=user.id,
@@ -346,7 +225,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton("💳 ЮMoney / Российские платёжные системы", callback_data="yoomoney")],
             [InlineKeyboardButton("💳 PayPal / ЕС", callback_data="paypal")],
-            [InlineKeyboardButton("💳 Прямой перевод через Сбербанк", callback_data="sberbank")]
+            [InlineKeyboardButton("💳 Прямой перевод через Сбербанк", callback_data="sberbank")],
+	    [InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel")],
         ]
         await context.bot.send_message(
             chat_id=user.id,
@@ -359,7 +239,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
                 [InlineKeyboardButton("💳 Оплатить консультацию", url=payment_link)],
                 [InlineKeyboardButton("✅ Я оплатил", callback_data="confirm_sber")],
-                [InlineKeyboardButton("↩️ Назад", callback_data="start_payment")]
+                [InlineKeyboardButton("↩️ Назад", callback_data="start_payment")],
+		[InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel")],
             ]
 
         method_names = {
@@ -386,8 +267,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton(
                 f"Связаться с доктором {consultant['name']}",
-                url=f"https://t.me/{consultant['username'].lstrip('@')}"
-            )]
+                url=f"https://t.me/{consultant['username'].lstrip('@')}")],
+	    [InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel")],
         ]
         await context.bot.send_message(
             chat_id=user.id,
@@ -460,7 +341,7 @@ def delete_review_and_traces(review_id, context=None):
     conn.close()
 
     try:
-        conn_logs_local = sqlite3.connect("db_file", check_same_thread=False)
+        conn_logs_local = sqlite3.connect(db_file, check_same_thread=False)
         cur_logs_local = conn_logs_local.cursor()
         cur_logs_local.execute(
             "DELETE FROM logs WHERE message = ? OR message = ?",
@@ -477,7 +358,6 @@ async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE, messa
     cursor.execute(
         "SELECT id, title, rating, nickname FROM reviews WHERE approved=1 ORDER BY created_at DESC"
     )
-    context.user_data["in_review"] = True
     reviews = cursor.fetchall()
     conn.close()
 
@@ -520,13 +400,13 @@ async def user_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await context.bot.send_message(
-        chat_id=query.message.chat_id,
+        query.message.chat.id,
         text=f"{title} ({rating}⭐)\n\n{text_r}\n\nОт: {nickname}",
         reply_markup=reply_markup
     )
     return READING
     
-async def back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def user_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await read_reviews(update, context, message=query.message)
@@ -535,8 +415,8 @@ read_reviews_handler = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex("(?i)^отзывы$"), read_reviews)],
     states={
         READING: [
-            CallbackQueryHandler(read_reviews, pattern=r"^read_\d+$"),
-            CallbackQueryHandler(back, pattern="^back$")
+            CallbackQueryHandler(user_read_review, pattern=r"^user_read_\d+$"),
+            CallbackQueryHandler(user_back, pattern="^user_back$")
         ]
     },
     fallbacks=[],
@@ -588,12 +468,14 @@ async def admin_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if approved:
         buttons = [
             InlineKeyboardButton("✏️ Редактировать", callback_data=f"admin_edit_{review_id}"),
-            InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_delete_{review_id}")
+            InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_delete_{review_id}"),
+	    InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel"),
         ]
     else:
         buttons = [
             InlineKeyboardButton("✅ Одобрить", callback_data=f"admin_approve_{review_id}"),
-            InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_delete_{review_id}")
+            InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_delete_{review_id}"),
+	    InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel"),
         ]
 
     keyboard = [buttons, [InlineKeyboardButton("⬅️ Назад", callback_data="admin_back")]]
@@ -615,16 +497,16 @@ async def admin_approve_review(update: Update, context: ContextTypes.DEFAULT_TYP
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("UPDATE reviews SET approved=1 WHERE id=?", (review_id,))
-    cursor.execute("SELECT id FROM reviews WHERE id=?", (review_id,))
-    row = cursor.fetchone()
+    cursor.execute("SELECT user_id FROM reviews WHERE id=?", (review_id,))
+    user_row = cursor.fetchone()
     conn.commit()
     conn.close()
     backup_db()
 
     # Отправляем уведомление пользователю
-    if row and row[0]:
+    if user_row and user_row[0]:
         try:
-            await context.bot.send_message(chat_id=row[0], text="✅ Ваш отзыв опубликован! Спасибо!")
+            await context.bot.send_message(chat_id=user_row[0], text="✅ Ваш отзыв опубликован! Спасибо!")
         except Exception:
             pass
 
@@ -639,17 +521,17 @@ async def admin_delete_review(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM reviews WHERE id=?", (review_id,))
-    row = cursor.fetchone()
+    cursor.execute("SELECT user_id FROM reviews WHERE id=?", (review_id,))
+    user_row = cursor.fetchone()
     cursor.execute("DELETE FROM reviews WHERE id=?", (review_id,))
     conn.commit()
     conn.close()
     backup_db()
 
     # Уведомляем пользователя
-    if row and row[0]:
+    if user_row and user_row[0]:
         try:
-            await context.bot.send_message(chat_id=row[0], text="❌ Ваш отзыв не прошёл модерацию и был удалён.")
+            await context.bot.send_message(chat_id=user_row[0], text="❌ Ваш отзыв не прошёл модерацию и был удалён.")
         except Exception:
             pass
 
@@ -724,19 +606,25 @@ admin_review_conv = ConversationHandler(
             CallbackQueryHandler(admin_approve_review, pattern=r"^admin_approve_\d+$"),  # одобрить
             CallbackQueryHandler(admin_delete_review, pattern=r"^admin_delete_\d+$"),    # удалить
             CallbackQueryHandler(admin_edit_review, pattern=r"^admin_edit_\d+$"),
-            CallbackQueryHandler(admin_back, pattern="^admin_back$")
+            CallbackQueryHandler(admin_back, pattern="^admin_back$"),
+	    CallbackQueryHandler(cancel, pattern="^admin_cancel$"),
         ],
         ADMIN_EDITING: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_edit),
-            CallbackQueryHandler(admin_cancel_edit, pattern="^admin_cancel_edit$")
+            CallbackQueryHandler(admin_cancel_edit, pattern="^admin_cancel_edit$"),
+	    CallbackQueryHandler(cancel, pattern="^admin_cancel$"),
         ],
     },
-    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
+    fallbacks=[CommandHandler("cancel",cancel), MessageHandler(filters.Regex(r"^/(start|stats)$"), cancel)],
     allow_reentry=True)
 
 # === О_Т_З_Ы_В_Ы_ ===
     # === Написание ===
 async def start_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip().lower()
+    if text != "оставить отзыв":
+        return
+
     user_id = update.message.from_user.id
     conn = get_conn()
     cursor = conn.cursor()
@@ -747,10 +635,6 @@ async def start_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
     conn.close()
 
-    context.user_data["in_review"] = True
-    context.user_data["review"] = {} 
-
-    keyboard = [[InlineKeyboardButton("❌ Отменить отзыв", callback_data="cancel_review")]]
     await update.message.reply_text(
         f"👋 Добро пожаловать в систему отзывов об оказанных консультациях!\n\n"
         f"❗️ Правила оставления отзывов:\n"
@@ -758,8 +642,7 @@ async def start_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f" Один отзыв с аккаунта\n"
         f"✍ Максимальная длина — {MAX_TEXT_LENGTH} символов\n"
         f"🔍 Пожалуйста, воздержитесь от нелитературных выражений. Все отзывы проходят модерацию\n\n"
-        "👉 Введите заголовок вашего отзыва:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        "👉 Введите заголовок вашего отзыва:"
     )
     return TITLE
     # === Заголовок ===
@@ -769,29 +652,18 @@ async def review_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Поле не может быть пустым. Введите снова:")
         return TITLE
 
-    context.user_data["review"]["title"] = title
-    context.user_data["review"]["user_id"] = update.message.from_user.id
-    context.user_data["review"]["username"] = (
-        f"@{update.message.from_user.username}" if update.message.from_user.username else "Anonymous"
-    )
+    context.user_data["review"] = {
+        "title": title,
+        "user_id": update.message.from_user.id,
+        "username": f"@{update.message.from_user.username}" if update.message.from_user.username else "Anonymous"
+    }
 
-    keyboard = [[InlineKeyboardButton(f"{i}⭐", callback_data=f"rate_{i}") for i in range(1, 6)]]
-    await update.message.reply_text(
-        "Дайте Вашу оценку консультации по шкале от 1–5:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    keyboard = [
+	[InlineKeyboardButton(f"{i}⭐", callback_data=f"rate_{i}") for i in range(1, 6)],
+	[InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel")],
+    ]
+    await update.message.reply_text("Дайте Вашу оценку консультации по шкале от 1–5:", reply_markup=InlineKeyboardMarkup(keyboard))
     return RATING
-    # === Отмена ===
-async def cancel_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("in_review"):
-        context.user_data.pop("in_review", None)
-        context.user_data.pop("review", None)
-        await update.message.reply_text("❌ Процесс оставления отзыва отменён.")
-    keyboard = [[InlineKeyboardButton("❌ Отменить отзыв", callback_data="cancel_review")]]
-    await update.message.reply_text(
-        "Вы начали оставление отзыва.",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
     # === Оценка ===
 async def review_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -808,18 +680,17 @@ async def review_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     if len(text) > MAX_TEXT_LENGTH:
         await update.message.reply_text(
-            f"Превышена максимальная длинна сообщения в {MAX_TEXT_LENGTH} символов. "
-            f"Сократите текст на {len(text) - MAX_TEXT_LENGTH} символов."
+            f"Превышена максимальная длинна сообщения в {MAX_TEXT_LENGTH} символов."
         )
         return TEXT
     context.user_data["review"]["text"] = text
     keyboard = [
         [InlineKeyboardButton("Использовать ник Telegram", callback_data="nick_username")],
-        [InlineKeyboardButton("Использовать псевдоним", callback_data="nick_custom")]
+        [InlineKeyboardButton("Использовать псевдоним", callback_data="nick_custom")],
+	[InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel")],
     ]
     await update.message.reply_text("Как подписать отзыв?", reply_markup=InlineKeyboardMarkup(keyboard))
     return NICKNAME
-
 async def review_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -852,7 +723,7 @@ async def review_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     keyboard = [
         [InlineKeyboardButton("✅ Отправить на модерацию", callback_data="send_review")],
-        [InlineKeyboardButton("❌ Отменить", callback_data="cancel_review")]
+        [InlineKeyboardButton("❌ Отмена", callback_data="cancel_review")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -895,66 +766,46 @@ async def review_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.edit_message_text(
             "✅ Ваш отзыв отправлен на модерацию. Вы будете оповещены об одобрении отзыва. Спасибо!"
-        )   
+        )
+        return ConversationHandler.END
     else:
         await query.edit_message_text("❌ Отзыв отменён.")
-    
-async def cancel_review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_text("❌ Процесс оставления отзыва отменён.")
-    
-    context.user_data.pop("in_review", None)
-    context.user_data.pop("review", None)
-    return ConversationHandler.END
-
+        return ConversationHandler.END
 review_conv = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex(r"(?i)^оставить отзыв$"), start_review)],
     states={
-        TITLE: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, review_title),
-            CallbackQueryHandler(cancel_review_callback, pattern="^cancel_review$")
-        ],
-        RATING: [
-            CallbackQueryHandler(review_rating, pattern=r"^rate_\d+$"),
-            CallbackQueryHandler(cancel_review_callback, pattern="^cancel_review$")
-        ],
-        TEXT: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, review_text),
-            CallbackQueryHandler(cancel_review_callback, pattern="^cancel_review$")
-        ],
-        NICKNAME: [
-            CallbackQueryHandler(review_nickname, pattern="^nick_"),
-            CallbackQueryHandler(cancel_review_callback, pattern="^cancel_review$")
-        ],
-        NICKNAME_CUSTOM: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, review_nickname_custom),
-            CallbackQueryHandler(cancel_review_callback, pattern="^cancel_review$")
-        ],
-        CONFIRM: [
-            CallbackQueryHandler(review_final, pattern="^(send_review|cancel_review)$")
-        ],
+        TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, review_title)],
+        RATING: [CallbackQueryHandler(review_rating, pattern=r"^rate_\d+$")],
+        TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, review_text)],
+        NICKNAME: [CallbackQueryHandler(review_nickname, pattern="^nick_")],
+        NICKNAME_CUSTOM: [MessageHandler(filters.TEXT & ~filters.COMMAND, review_nickname_custom)],
+        CONFIRM: [CallbackQueryHandler(review_final, pattern="^(send_review|cancel_review)$")],
     },
-    fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
-    allow_reentry=True
+    fallbacks=[
+        CommandHandler("cancel", cancel),
+        MessageHandler(filters.Regex(r"^/(start|stats)$"), cancel)
+    ],
+    allow_reentry=True		
 )
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 def main():
+    import asyncio
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(review_conv)
     app.add_handler(admin_review_conv)
     app.add_handler(read_reviews_handler)
     app.add_handler(moderation_handler)
-    app.add_handler(CommandHandler("cancel_review", cancel_review))
-    app.add_handler(CommandHandler("start", handle_message))
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, log_message), group=0)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message), group=1)
     app.add_handler(CallbackQueryHandler(button_handler))
+    app.create_task(daily_heartbeat_task(app.bot, ADMIN_CHAT_ID, hour=8, minute=30))
     app.run_polling(drop_pending_updates=True)
+    
 
 if __name__ == "__main__": 
             main()
