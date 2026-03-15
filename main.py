@@ -94,7 +94,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text("❌ Диалог отменён.")
     return ConversationHandler.END
 
-	# === /stats ===
+    # === /stats ===
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor_logs.execute("SELECT message FROM logs")
     all_messages = cursor_logs.fetchall()
@@ -131,7 +131,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("💳 ЮMoney / Российские платёжные системы", callback_data="yoomoney")],
             [InlineKeyboardButton("💳 PayPal / ЕС", callback_data="paypal")],
             [InlineKeyboardButton("💳 Прямой перевод через Сбербанк", callback_data="sberbank")],
-	    [InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
+        [InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
         ]
         await update.message.reply_text(
             "Пожалуйста! Рад был помочь! 😊\n\n"
@@ -213,7 +213,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("💳 ЮMoney / Российские платёжные системы", callback_data="yoomoney")],
             [InlineKeyboardButton("💳 PayPal / ЕС", callback_data="paypal")],
             [InlineKeyboardButton("💳 Прямой перевод через Сбербанк", callback_data="sberbank")],
-	    [InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
+        [InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
         ]
         await context.bot.send_message(
             chat_id=user.id,
@@ -254,7 +254,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(
                 f"Связаться с доктором {consultant['name']}",
                 url=f"https://t.me/{consultant['username'].lstrip('@')}")],
-	    [InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
+        [InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
         ]
         await context.bot.send_message(
             chat_id=user.id,
@@ -367,12 +367,12 @@ async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE, messa
         return READING
     keyboard = []
     for review_id, title, rating, nickname in reviews:
-	keyboard = [
-    	    [InlineKeyboardButton(f"{title} ({'⭐' * rating}) — {nickname}", callback_data=f"user_read_{review_id}")]
-    	    for review_id, title, rating, nickname in reviews
-	]
-	keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
-        
+        keyboard = [
+            [InlineKeyboardButton(f"{title} ({'⭐' * rating}) — {nickname}", callback_data=f"user_read_{review_id}")]
+            for review_id, title, rating, nickname in reviews
+        ]
+        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
+
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     if message:
@@ -380,7 +380,7 @@ async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE, messa
     else:
         await update.message.reply_text("📖 Отзывы:", reply_markup=reply_markup)
     return READING
-    
+
 async def user_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -407,7 +407,7 @@ async def user_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
     return READING
-    
+
 async def user_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -471,13 +471,13 @@ async def admin_read_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buttons = [
             InlineKeyboardButton("✏️ Редактировать", callback_data=f"admin_edit_{review_id}"),
             InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_delete_{review_id}"),
-	    InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel"),
+        InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel"),
         ]
     else:
         buttons = [
             InlineKeyboardButton("✅ Одобрить", callback_data=f"admin_approve_{review_id}"),
             InlineKeyboardButton("🗑 Удалить", callback_data=f"admin_delete_{review_id}"),
-	    InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel"),
+        InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel"),
         ]
 
     keyboard = [buttons, [InlineKeyboardButton("⬅️ Назад", callback_data="admin_back")]]
@@ -609,12 +609,12 @@ admin_review_conv = ConversationHandler(
             CallbackQueryHandler(admin_delete_review, pattern=r"^admin_delete_\d+$"),    # удалить
             CallbackQueryHandler(admin_edit_review, pattern=r"^admin_edit_\d+$"),
             CallbackQueryHandler(admin_back, pattern="^admin_back$"),
-	    CallbackQueryHandler(cancel, pattern="^admin_cancel$"),
+        CallbackQueryHandler(cancel, pattern="^admin_cancel$"),
         ],
         ADMIN_EDITING: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_edit),
             CallbackQueryHandler(admin_cancel_edit, pattern="^admin_cancel_edit$"),
-	    CallbackQueryHandler(cancel, pattern="^admin_cancel$"),
+        CallbackQueryHandler(cancel, pattern="^admin_cancel$"),
         ],
     },
     fallbacks=[CommandHandler("cancel",cancel), MessageHandler(filters.Regex(r"^/(start|stats)$"), cancel)],
@@ -661,8 +661,8 @@ async def review_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
 
     keyboard = [
-	[InlineKeyboardButton(f"{i}⭐", callback_data=f"rate_{i}") for i in range(1, 6)],
-	[InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
+    [InlineKeyboardButton(f"{i}⭐", callback_data=f"rate_{i}") for i in range(1, 6)],
+    [InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
     ]
     await update.message.reply_text("Дайте Вашу оценку консультации по шкале от 1–5:", reply_markup=InlineKeyboardMarkup(keyboard))
     return RATING
@@ -689,7 +689,7 @@ async def review_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("Использовать ник Telegram", callback_data="nick_username")],
         [InlineKeyboardButton("Использовать псевдоним", callback_data="nick_custom")],
-	[InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
+    [InlineKeyboardButton("❌ Отмена", callback_data="cancel")],
     ]
     await update.message.reply_text("Как подписать отзыв?", reply_markup=InlineKeyboardMarkup(keyboard))
     return NICKNAME
@@ -785,7 +785,7 @@ review_conv = ConversationHandler(
     },
     fallbacks=[
         CommandHandler("cancel", cancel),
-	MessageHandler(filters.Regex(r"^/(start|stats)$"), cancel)
+    MessageHandler(filters.Regex(r"^/(start|stats)$"), cancel)
     ],
     allow_reentry=True		
 )
@@ -807,7 +807,7 @@ def main():
     app.add_handler(CallbackQueryHandler(user_cancel, pattern="^cancel$"))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.run_polling(drop_pending_updates=True)
-    
+
 
 if __name__ == "__main__": 
             main()
