@@ -84,19 +84,6 @@ async def log_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with open(stats_file, "w", encoding="utf-8") as f:
         json.dump(word_counter, f, ensure_ascii=False, indent=2)
 
-async def daily_heartbeat_task(bot: Bot, chat_id: int, hour=8, minute=30):
-    sent_today = False
-    while True:
-        try:
-            now = datetime.now()
-            if now.hour == hour and now.minute == minute and not sent_today:
-                await bot.send_message(chat_id=chat_id, text="✅ Бот работает нормально.")
-                sent_today = True
-            elif now.hour != hour or now.minute != minute:
-                sent_today = False
-        except Exception as e:
-            print(f"Heartbeat error: {e}")
-        await asyncio.sleep(30)
 
 # === Обработчик команд ==
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -803,7 +790,6 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, log_message), group=0)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message), group=1)
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.create_task(daily_heartbeat_task(app.bot, ADMIN_CHAT_ID, hour=8, minute=30))
     app.run_polling(drop_pending_updates=True)
     
 
