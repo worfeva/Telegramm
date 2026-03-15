@@ -93,7 +93,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.answer()
         await update.callback_query.edit_message_text("❌ Диалог отменён.")
     return ConversationHandler.END
-    
+
 	# === /stats ===
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor_logs.execute("SELECT message FROM logs")
@@ -338,6 +338,18 @@ def delete_review_and_traces(review_id, context=None):
     except Exception:
         pass
     # === Просмотр ===
+async def user_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if query:
+        await query.answer("Диалог отменён", show_alert=False)
+        try:
+            await query.message.delete()  # удаляем кнопки
+        except:
+            pass
+    elif update.message:
+        await update.message.reply_text("❌ Диалог отменён.")
+    return ConversationHandler.END
+
 async def read_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE, message=None):
     conn = get_conn()
     cursor = conn.cursor()
@@ -769,7 +781,8 @@ review_conv = ConversationHandler(
     },
     fallbacks=[
         CommandHandler("cancel", cancel),
-        MessageHandler(filters.Regex(r"^/(start|stats)$"), cancel)
+        CallbackQueryHandler(user_cancel, pattern="^cancel$"),
+	MessageHandler(filters.Regex(r"^/(start|stats)$"), cancel)
     ],
     allow_reentry=True		
 )
