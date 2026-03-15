@@ -125,9 +125,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
 
-    if text == "отзывы":
-    	return await read_reviews(update, context)
-
     keywords_ty = ["спасибо", "благодарю", "реквизиты", "поддержать", "пожертвовать", "помочь"]
     if any(keyword in text for keyword in keywords_ty):
         keyboard = [
