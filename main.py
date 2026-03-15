@@ -777,11 +777,10 @@ review_conv = ConversationHandler(
         TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, review_text)],
         NICKNAME: [CallbackQueryHandler(review_nickname, pattern="^nick_")],
         NICKNAME_CUSTOM: [MessageHandler(filters.TEXT & ~filters.COMMAND, review_nickname_custom)],
-        CONFIRM: [CallbackQueryHandler(review_final, pattern="^(send_review|cancel_review)$")],
+        CONFIRM: [CallbackQueryHandler(review_final, pattern="^(send_review|cancel_review)$"), CallbackQueryHandler(user_cancel, pattern="^cancel$")],
     },
     fallbacks=[
         CommandHandler("cancel", cancel),
-        CallbackQueryHandler(user_cancel, pattern="^cancel$"),
 	MessageHandler(filters.Regex(r"^/(start|stats)$"), cancel)
     ],
     allow_reentry=True		
