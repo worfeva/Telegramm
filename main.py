@@ -11,7 +11,7 @@ from telegram.ext import (
 from collections import Counter
 
 ADMIN_CHAT_ID = 5115887933
-BOT_TOKEN = "7986033726:AAHyB1I77N68Z53-YOj1B5uhJLXEuB7XdEU"
+BOT_TOKEN = "7986033726:AAEhE5fyM9007_SQ9S4QdGV496DZ4XDUwM8"
 consultation_chats = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 stats_file = os.path.join(BASE_DIR, "stats.json")
